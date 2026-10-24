@@ -1,0 +1,28 @@
+# Build output
+los23.2-nethunter/out/
+
+# Clean source duplicate
+los23.2-nethunter/source-clean23.2/
+
+# Magisk intermediate files
+magisk/
+
+# Comparison files
+backup-vergleich/
+
+# Large binaries (stored as GitHub Release assets)
+docker-result/lineage-*.zip
+docker-result/*.zip
+backup/*.img
+
+# Intermediate build logs
+los23.2-nethunter/*.log
+!los23.2-nethunter/build-nethunter-features.log
+
+# Editor/OS junk
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+

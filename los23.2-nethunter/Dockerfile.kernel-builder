@@ -1,0 +1,12 @@
+FROM ubuntu:24.04
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    clang-18 lld-18 llvm-18 gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+    gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf \
+    build-essential bc bison flex libssl-dev libelf-dev libncurses-dev make perl python3 python-is-python3 \
+    device-tree-compiler cpio rsync git zip unzip file xz-utils ca-certificates \
+    dwarves kmod zstd lz4 \
+    && rm -rf /var/lib/apt/lists/* \
+    && for x in clang clang++ ld.lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-strip llvm-readelf; do \
+      ln -s "/usr/bin/${x}-18" "/usr/local/bin/${x}"; done
+ENV PATH=/usr/local/bin:/usr/bin:/bin
