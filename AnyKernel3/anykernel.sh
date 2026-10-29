@@ -117,6 +117,8 @@ else
   patch_cmdline "skip_override" "";
 fi;
 
+patch_cmdline "printk.synchronous" "printk.synchronous=1";
+
 # end ramdisk changes
 
 write_boot;

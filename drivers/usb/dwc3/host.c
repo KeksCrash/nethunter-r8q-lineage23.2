@@ -142,12 +142,15 @@ int dwc3_host_init(struct dwc3 *dwc)
 	phy_create_lookup(dwc->usb3_generic_phy, "usb3-phy",
 			  dev_name(dwc->dev));
 
+	pr_emerg("mt76-dbg: xhci platform_device_add\n");
 	ret = platform_device_add(xhci);
+	pr_emerg("mt76-dbg: xhci platform_device_add ret=%d\n", ret);
 	if (ret) {
 		dev_err(dwc->dev, "failed to register xHCI device\n");
 		goto err2;
 	}
 
+	pr_emerg("mt76-dbg: xhci registered ok\n");
 	return 0;
 err2:
 	phy_remove_lookup(dwc->usb2_generic_phy, "usb2-phy",

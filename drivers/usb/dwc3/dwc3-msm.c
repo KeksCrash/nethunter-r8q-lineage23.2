@@ -4582,6 +4582,8 @@ static int dwc3_otg_start_host(struct dwc3_msm *mdwc, int on)
 	int ret = 0;
 	u32 val;
 
+	pr_emerg("mt76-dbg: dwc3_otg_start_host on=%d\n", on);
+
 	/*
 	 * The vbus_reg pointer could have multiple values
 	 * NULL: regulator_get() hasn't been called, or was previously deferred
@@ -4620,6 +4622,7 @@ static int dwc3_otg_start_host(struct dwc3_msm *mdwc, int on)
 
 		if (!IS_ERR_OR_NULL(mdwc->vbus_reg))
 			ret = regulator_enable(mdwc->vbus_reg);
+		pr_emerg("mt76-dbg: vbus_reg enabled ret=%d\n", ret);
 		if (ret) {
 			dev_err(mdwc->dev, "unable to enable vbus_reg\n");
 			mdwc->hs_phy->flags &= ~PHY_HOST_MODE;
@@ -4638,7 +4641,9 @@ static int dwc3_otg_start_host(struct dwc3_msm *mdwc, int on)
 		dwc3_en_sleep_mode(dwc);
 		mdwc->usbdev_nb.notifier_call = msm_dwc3_usbdev_notify;
 		usb_register_atomic_notify(&mdwc->usbdev_nb);
+		pr_emerg("mt76-dbg: calling dwc3_host_init\n");
 		ret = dwc3_host_init(dwc);
+		pr_emerg("mt76-dbg: dwc3_host_init ret=%d\n", ret);
 		if (ret) {
 			dev_err(mdwc->dev,
 				"%s: failed to add XHCI pdev ret=%d\n",
@@ -4656,6 +4661,7 @@ static int dwc3_otg_start_host(struct dwc3_msm *mdwc, int on)
 		}
 
 		mdwc->in_host_mode = true;
+		pr_emerg("mt76-dbg: host mode active\n");
 		dwc3_usb3_phy_suspend(dwc, true);
 
 		/* Reduce the U3 exit handshake timer from 8us to approximately

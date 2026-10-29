@@ -17,6 +17,7 @@
 *.c.[012]*.*
 *.dtb
 *.dtb.S
+*.dtbo
 *.dwo
 *.elf
 *.gcno
@@ -42,6 +43,7 @@
 *.tab.[ch]
 *.tar
 *.xz
+*.zip
 Module.symvers
 modules.builtin
 
@@ -77,6 +79,11 @@ modules.builtin
 # tar directory (make tar*-pkg)
 #
 /tar-install/
+
+#
+# Build output directory
+#
+/out/
 
 #
 # git files that we don't want to ignore even if they are dot-files

@@ -2579,6 +2579,10 @@ int usb_new_device(struct usb_device *udev)
 {
 	int err;
 
+	pr_emerg("mt76-dbg: usb_new_device vid=%04x pid=%04x\n",
+		 le16_to_cpu(udev->descriptor.idVendor),
+		 le16_to_cpu(udev->descriptor.idProduct));
+
 	if (udev->parent) {
 		/* Initialize non-root-hub device wakeup to disabled;
 		 * device (un)configuration controls wakeup capable
@@ -5126,6 +5130,8 @@ static void hub_port_connect(struct usb_hub *hub, int port1, u16 portstatus,
 	struct usb_device *udev = port_dev->child;
 	static int unreliable_port = -1;
 	bool retry_locked;
+
+	pr_emerg("mt76-dbg: hub_port_connect port=%d status=%04x\n", port1, portstatus);
 #ifdef CONFIG_USB_DEBUG_DETAILED_LOG
 	dev_info(&port_dev->dev,
 		"port %d, status %04x, change %04x, %s\n",

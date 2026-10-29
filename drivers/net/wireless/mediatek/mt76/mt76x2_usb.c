@@ -38,24 +38,32 @@ static int mt76x2u_probe(struct usb_interface *intf,
 	struct mt76x2_dev *dev;
 	int err;
 
+	pr_emerg("mt76-dbg: mt76x2u_probe ENTER\n");
+
 	dev = mt76x2u_alloc_device(&intf->dev);
 	if (!dev)
 		return -ENOMEM;
 
 	udev = usb_get_dev(udev);
+	pr_emerg("mt76-dbg: calling usb_reset_device\n");
 	usb_reset_device(udev);
+	pr_emerg("mt76-dbg: usb_reset_device done\n");
 
 	err = mt76u_init(&dev->mt76, intf);
+	pr_emerg("mt76-dbg: mt76u_init ret=%d\n", err);
 	if (err < 0)
 		goto err;
 
 	dev->mt76.rev = mt76_rr(dev, MT_ASIC_VERSION);
+	pr_emerg("mt76-dbg: ASIC rev=%08x\n", dev->mt76.rev);
 	dev_info(dev->mt76.dev, "ASIC revision: %08x\n", dev->mt76.rev);
 
 	err = mt76x2u_register_device(dev);
+	pr_emerg("mt76-dbg: register_device ret=%d\n", err);
 	if (err < 0)
 		goto err;
 
+	pr_emerg("mt76-dbg: mt76x2u_probe SUCCESS\n");
 	return 0;
 
 err:

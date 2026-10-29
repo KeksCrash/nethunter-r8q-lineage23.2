@@ -182,12 +182,16 @@ int mt76x2u_init_hardware(struct mt76x2_dev *dev)
 
 	dev->beacon_offsets = beacon_offsets;
 
+	pr_emerg("mt76-dbg: reset_wlan\n");
 	mt76x2_reset_wlan(dev, true);
+	pr_emerg("mt76-dbg: power_on\n");
 	mt76x2u_power_on(dev);
 
+	pr_emerg("mt76-dbg: wait_for_mac 1\n");
 	if (!mt76x2_wait_for_mac(dev))
 		return -ETIMEDOUT;
 
+	pr_emerg("mt76-dbg: mcu_fw_init\n");
 	err = mt76x2u_mcu_fw_init(dev);
 	if (err < 0)
 		return err;
@@ -261,18 +265,22 @@ int mt76x2u_register_device(struct mt76x2_dev *dev)
 	INIT_DELAYED_WORK(&dev->cal_work, mt76x2u_phy_calibrate);
 	mt76x2_init_device(dev);
 
+	pr_emerg("mt76-dbg: init_eeprom\n");
 	err = mt76x2u_init_eeprom(dev);
 	if (err < 0)
 		return err;
 
+	pr_emerg("mt76-dbg: mcu_init_rx\n");
 	err = mt76u_mcu_init_rx(&dev->mt76);
 	if (err < 0)
 		return err;
 
+	pr_emerg("mt76-dbg: alloc_queues\n");
 	err = mt76u_alloc_queues(&dev->mt76);
 	if (err < 0)
 		goto fail;
 
+	pr_emerg("mt76-dbg: init_hardware\n");
 	err = mt76x2u_init_hardware(dev);
 	if (err < 0)
 		goto fail;

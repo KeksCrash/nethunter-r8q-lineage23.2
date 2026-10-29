@@ -823,6 +823,9 @@ int mt76u_init(struct mt76_dev *dev,
 		.copy = mt76u_copy,
 	};
 	struct mt76_usb *usb = &dev->usb;
+	int ret;
+
+	pr_emerg("mt76-dbg: mt76u_init ENTER\n");
 
 	tasklet_init(&usb->rx_tasklet, mt76u_rx_tasklet, (unsigned long)dev);
 	tasklet_init(&usb->tx_tasklet, mt76u_tx_tasklet, (unsigned long)dev);
@@ -836,7 +839,9 @@ int mt76u_init(struct mt76_dev *dev,
 	dev->bus = &mt76u_ops;
 	dev->queue_ops = &usb_queue_ops;
 
-	return mt76u_set_endpoints(intf, usb);
+	ret = mt76u_set_endpoints(intf, usb);
+	pr_emerg("mt76-dbg: mt76u_set_endpoints ret=%d\n", ret);
+	return ret;
 }
 EXPORT_SYMBOL_GPL(mt76u_init);
 
