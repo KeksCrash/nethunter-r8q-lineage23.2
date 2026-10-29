@@ -201,9 +201,19 @@ mt76x2_bss_info_changed(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 void
 mt76x2_sta_ps(struct mt76_dev *mdev, struct ieee80211_sta *sta, bool ps)
 {
-	struct mt76x2_sta *msta = (struct mt76x2_sta *) sta->drv_priv;
-	struct mt76x2_dev *dev = container_of(mdev, struct mt76x2_dev, mt76);
-	int idx = msta->wcid.idx;
+	struct mt76x2_sta *msta;
+	struct mt76x2_dev *dev;
+	int idx;
+
+	if (!sta)
+		return;
+
+	msta = (struct mt76x2_sta *)sta->drv_priv;
+	if (!msta)
+		return;
+
+	dev = container_of(mdev, struct mt76x2_dev, mt76);
+	idx = msta->wcid.idx;
 
 	mt76_stop_tx_queues(&dev->mt76, sta, true);
 	mt76x2_mac_wcid_set_drop(dev, idx, ps);
