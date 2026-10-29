@@ -87,12 +87,72 @@ if [ -n "$MISSING" ]; then
     echo "[!] Missing host packages:$MISSING"
     echo "    Install with: sudo apt install -y$MISSING (Debian/Ubuntu)"
     echo "    Or: sudo pacman -S$MISSING (Arch)"
+    exit 1
 fi
 
+# 6. Android SDK check (for IMSI Catcher App)
 echo ""
-echo "=== Setup complete ==="
-echo "To build: cd $DIR && bash build.sh"
+echo "=== Checking Android SDK ==="
+ANDROID_SDK="$HOME/Android/Sdk"
+ANDROID_BT=""
+if [ -d "$ANDROID_SDK/build-tools" ]; then
+    ANDROID_BT=$(ls -d "$ANDROID_SDK/build-tools"/*/ 2>/dev/null | sort -V | tail -1)
+    if [ -n "$ANDROID_BT" ] && [ -x "${ANDROID_BT}aapt2" ]; then
+        echo "[OK] Android SDK build-tools: $ANDROID_BT"
+    else
+        ANDROID_BT=""
+    fi
+fi
+if [ -z "$ANDROID_BT" ]; then
+    echo "[!] Android SDK not found — IMSI Catcher app will NOT be built"
+    echo "    Install: https://developer.android.com/studio#command-line-tools-only"
+fi
+
+# 7. Build kernel
 echo ""
-echo "Build produces:"
-echo "  Kernel:  $PARENT_DIR/out/arch/arm64/boot/Image.gz-dtb"
-echo "  ZIP:     $PARENT_DIR/build/r8q/Nethunter_r8q_v1.0.zip"
+echo "=== Building kernel ==="
+bash "$DIR/build.sh"
+KERNEL_ZIP="$PARENT_DIR/build/r8q/Nethunter_r8q_v1.0.zip"
+
+# 8. Build IMSI Catcher App (if SDK available)
+APK_PATH=""
+if [ -n "$ANDROID_BT" ]; then
+    echo ""
+    echo "=== Building IMSI Catcher App ==="
+    (cd "$DIR/apps/ImsiCatcher" && bash build.sh)
+    APK_PATH="$DIR/apps/ImsiCatcher/build/ImsiCatcher.apk"
+fi
+
+# 9. Summary
+echo ""
+echo "========================================="
+echo "=== Build complete ==="
+echo "========================================="
+echo ""
+echo "Kernel ZIP:  $KERNEL_ZIP"
+if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
+    echo "IMSI App:    $APK_PATH"
+fi
+echo ""
+echo "=== Deploy to device ==="
+echo "  # Flash kernel (via TWRP or ADB sideload):"
+echo "  adb sideload $KERNEL_ZIP"
+echo ""
+echo "  # Install IMSI Catcher App:"
+if [ -n "$APK_PATH" ]; then
+    echo "  adb install $APK_PATH"
+else
+    echo "  (build Android SDK first, then re-run setup.sh)"
+fi
+echo ""
+echo "  # Push Magisk modules:"
+echo "  adb push $DIR/magisk-modules/diag-fix /data/adb/modules/diag-fix"
+echo "  adb push $DIR/magisk-modules/mt76-firmware /data/adb/modules/mt76-firmware"
+echo ""
+echo "  # Push device scripts:"
+echo "  adb shell mkdir -p /data/local/bin"
+echo "  adb push $DIR/device-scripts/imsi-catcher-detect.sh /data/local/bin/"
+echo "  adb push $DIR/device-scripts/usbfs.sh /data/adb/service.d/"
+echo ""
+echo "  # Grant su access (after install, check uid with: stat -c %u /data/user/0/<pkg>/):"
+echo "  adb shell 'su -c \"magisk --sqlite \\\"INSERT OR REPLACE INTO policies (uid,policy,until,logging,notification) VALUES(<UID>,2,0,1,0)\\\"\"'"
