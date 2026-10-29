@@ -741,12 +741,10 @@ void rpmh_rsc_debug(struct rsc_drv *drv, struct completion *compl)
 		pr_warn("ERROR:Possible lockup in Linux\n");
 
 	/*
-	 * The TCS(s) are busy waiting, we have no way to recover from this.
-	 * If this debug function is called, we assume it's because timeout
-	 * has happened.
-	 * Crash and report.
+	 * TCS busy after timeout — warn instead of crashing so USB host
+	 * enumeration (MT76 etc.) can recover on retry.
 	 */
-	BUG_ON(busy);
+	WARN_ON(busy);
 }
 
 static int rpmh_probe_tcs_config(struct platform_device *pdev,
