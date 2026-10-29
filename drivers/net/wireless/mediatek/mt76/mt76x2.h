@@ -161,6 +161,10 @@ struct mt76x2_sta {
 
 	struct ewma_signal rssi;
 	int inactive_count;
+
+	struct work_struct ps_work;
+	struct mt76x2_dev *ps_dev;
+	bool ps_filtering;
 };
 
 static inline bool mt76x2_wait_for_mac(struct mt76x2_dev *dev)
@@ -278,6 +282,7 @@ void mt76x2_queue_rx_skb(struct mt76_dev *mdev, enum mt76_rxq_id q,
 			 struct sk_buff *skb);
 
 void mt76x2_sta_ps(struct mt76_dev *dev, struct ieee80211_sta *sta, bool ps);
+void mt76x2_sta_ps_work(struct work_struct *work);
 
 void mt76x2_update_channel(struct mt76_dev *mdev);
 

@@ -122,6 +122,7 @@ int mt76x2_sta_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	if (vif->type == NL80211_IFTYPE_AP)
 		set_bit(MT_WCID_FLAG_CHECK_PS, &msta->wcid.flags);
 
+	INIT_WORK(&msta->ps_work, mt76x2_sta_ps_work);
 	ewma_signal_init(&msta->rssi);
 
 	rcu_assign_pointer(dev->wcid[idx], &msta->wcid);
@@ -141,6 +142,7 @@ int mt76x2_sta_remove(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	int idx = msta->wcid.idx;
 	int i;
 
+	cancel_work_sync(&msta->ps_work);
 	mutex_lock(&dev->mutex);
 	rcu_assign_pointer(dev->wcid[idx], NULL);
 	for (i = 0; i < ARRAY_SIZE(sta->txq); i++)

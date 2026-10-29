@@ -698,12 +698,21 @@ int mt76x2_mac_process_rx(struct mt76x2_dev *dev, struct sk_buff *skb,
 }
 EXPORT_SYMBOL_GPL(mt76x2_mac_process_rx);
 
+void mt76x2_sta_ps_work(struct work_struct *work)
+{
+	struct mt76x2_sta *msta = container_of(work, struct mt76x2_sta, ps_work);
+	struct mt76x2_dev *dev = msta->ps_dev;
+	int idx = msta->wcid.idx;
+	bool ps = msta->ps_filtering;
+
+	mt76x2_mac_wcid_set_drop(dev, idx, ps);
+}
+
 void
 mt76x2_sta_ps(struct mt76_dev *mdev, struct ieee80211_sta *sta, bool ps)
 {
 	struct mt76x2_sta *msta;
 	struct mt76x2_dev *dev;
-	int idx;
 
 	if (!sta)
 		return;
@@ -713,9 +722,10 @@ mt76x2_sta_ps(struct mt76_dev *mdev, struct ieee80211_sta *sta, bool ps)
 		return;
 
 	dev = container_of(mdev, struct mt76x2_dev, mt76);
-	idx = msta->wcid.idx;
+	msta->ps_dev = dev;
+	msta->ps_filtering = ps;
 
 	mt76_stop_tx_queues(&dev->mt76, sta, true);
-	mt76x2_mac_wcid_set_drop(dev, idx, ps);
+	ieee80211_queue_work(dev->mt76.hw, &msta->ps_work);
 }
 EXPORT_SYMBOL_GPL(mt76x2_sta_ps);
