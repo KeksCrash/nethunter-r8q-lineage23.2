@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme" parent="android:Theme.Material.Light.DarkActionBar">
+        <item name="android:colorPrimary">#1a1a2e</item>
+        <item name="android:colorPrimaryDark">#16213e</item>
+        <item name="android:colorAccent">#e94560</item>
+        <item name="android:windowBackground">#0f0f23</item>
+        <item name="android:textColor">#e0e0e0</item>
+        <item name="android:statusBarColor">#0f0f23</item>
+        <item name="android:navigationBarColor">#0f0f23</item>
+    </style>
+
+    <style name="ModeButton">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:layout_margin">3dp</item>
+        <item name="android:padding">10dp</item>
+        <item name="android:textSize">11sp</item>
+        <item name="android:textColor">#e0e0e0</item>
+        <item name="android:background">#1a1a2e</item>
+        <item name="android:textAllCaps">false</item>
+    </style>
+</resources>

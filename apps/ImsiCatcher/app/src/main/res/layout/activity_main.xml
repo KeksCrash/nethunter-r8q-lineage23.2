@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#0f0f23"
+    android:padding="8dp">
+
+    <!-- Status bar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="8dp"
+        android:background="#1a1a2e">
+
+        <View
+            android:id="@+id/statusDot"
+            android:layout_width="12dp"
+            android:layout_height="12dp"
+            android:background="#666666" />
+
+        <TextView
+            android:id="@+id/statusText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Idle"
+            android:textColor="#e0e0e0"
+            android:textSize="14sp"
+            android:paddingStart="8dp" />
+
+        <Button
+            android:id="@+id/btnStop"
+            android:layout_width="wrap_content"
+            android:layout_height="36dp"
+            android:text="STOP"
+            android:textColor="#ffffff"
+            android:background="#e94560"
+            android:textSize="12sp"
+            android:paddingHorizontal="16dp"
+            android:enabled="false" />
+    </LinearLayout>
+
+    <!-- Mode buttons row 1 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="4dp">
+
+        <Button android:id="@+id/btnScan" style="@style/ModeButton" android:text="Scan" />
+        <Button android:id="@+id/btnMonitor" style="@style/ModeButton" android:text="Monitor" />
+        <Button android:id="@+id/btnImsi" style="@style/ModeButton" android:text="IMSI" />
+        <Button android:id="@+id/btnStatus" style="@style/ModeButton" android:text="Status" />
+    </LinearLayout>
+
+    <!-- Mode buttons row 2 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <Button android:id="@+id/btnWifi" style="@style/ModeButton" android:text="WiFi" />
+        <Button android:id="@+id/btnBt" style="@style/ModeButton" android:text="BT" />
+        <Button android:id="@+id/btnDevices" style="@style/ModeButton" android:text="Devices" />
+        <Button android:id="@+id/btnClear" style="@style/ModeButton" android:text="Clear" android:background="#333333" />
+    </LinearLayout>
+
+    <!-- Log output -->
+    <ScrollView
+        android:id="@+id/logScroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="4dp"
+        android:background="#0a0a1a"
+        android:padding="8dp">
+
+        <TextView
+            android:id="@+id/logOutput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#00ff41"
+            android:textSize="11sp"
+            android:fontFamily="monospace"
+            android:text="IMSI Catcher Detection v2\nReady.\n" />
+    </ScrollView>
+</LinearLayout>
