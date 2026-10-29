@@ -2750,12 +2750,18 @@ static long diagchar_ioctl_init(struct file *filp,
 		result = diag_ioctl_cmd_dereg();
 		break;
 	case DIAG_IOCTL_SWITCH_LOGGING:
-		memset(&mode_param, 0, sizeof(mode_param));
-		if (copy_from_user(&mode_param.req_mode, (void __user *)ioarg,
-				   sizeof(mode_param.req_mode)))
-			return -EFAULT;
-		mode_param.peripheral_mask = DIAG_CON_ALL;
-		mode_param.device_mask = 1;
+		if (copy_from_user((void *)&mode_param, (void __user *)ioarg,
+				   sizeof(mode_param))) {
+			uint32_t legacy_mode;
+
+			memset(&mode_param, 0, sizeof(mode_param));
+			if (copy_from_user(&legacy_mode,
+					   (void __user *)ioarg,
+					   sizeof(legacy_mode)))
+				return -EFAULT;
+			mode_param.req_mode = legacy_mode;
+			mode_param.peripheral_mask = DIAG_CON_ALL;
+		}
 		diag_switch_logging_clear_mask(&mode_param, current->tgid);
 		mutex_lock(&driver->diagchar_mutex);
 		result = diag_switch_logging(&mode_param);

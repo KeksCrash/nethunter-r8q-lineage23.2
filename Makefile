@@ -523,6 +523,9 @@ CLANG_FLAGS	+= -no-integrated-as
 endif
 CLANG_FLAGS	+= -Werror=unknown-warning-option
 CLANG_FLAGS	+= $(call cc-option, -Wno-unsequenced)
+CLANG_FLAGS	+= $(call cc-option, -Wno-default-const-init-var-unsafe)
+CLANG_FLAGS	+= $(call cc-option, -Wno-default-const-init-field-unsafe)
+CLANG_FLAGS	+= $(call cc-option, -Wno-sizeof-pointer-memaccess)
 KBUILD_CPPFLAGS	+= $(CLANG_FLAGS)
 export CLANG_FLAGS
 endif
