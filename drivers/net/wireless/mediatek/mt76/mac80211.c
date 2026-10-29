@@ -587,7 +587,8 @@ mt76_check_ps(struct mt76_dev *dev, struct sk_buff *skb)
 	else
 		clear_bit(MT_WCID_FLAG_PS, &wcid->flags);
 
-	dev->drv->sta_ps(dev, sta, ps);
+	if (dev->drv->sta_ps)
+		dev->drv->sta_ps(dev, sta, ps);
 	ieee80211_sta_ps_transition(sta, ps);
 }
 

@@ -139,6 +139,7 @@ struct mt76x2_dev *mt76x2u_alloc_device(struct device *pdev)
 		.tx_complete_skb = mt76x2u_tx_complete_skb,
 		.tx_status_data = mt76x2u_tx_status_data,
 		.rx_skb = mt76x2_queue_rx_skb,
+		.sta_ps = mt76x2_sta_ps,
 	};
 	struct mt76x2_dev *dev;
 	struct mt76_dev *mdev;
@@ -276,7 +277,13 @@ int mt76x2u_register_device(struct mt76x2_dev *dev)
 	if (err < 0)
 		goto fail;
 
-	wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);
+	wiphy->interface_modes =
+		BIT(NL80211_IFTYPE_STATION) |
+		BIT(NL80211_IFTYPE_AP) |
+#ifdef CONFIG_MAC80211_MESH
+		BIT(NL80211_IFTYPE_MESH_POINT) |
+#endif
+		BIT(NL80211_IFTYPE_ADHOC);
 
 	err = mt76_register_device(&dev->mt76, true, mt76x2_rates,
 				   ARRAY_SIZE(mt76x2_rates));

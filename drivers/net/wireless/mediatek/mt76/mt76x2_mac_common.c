@@ -697,3 +697,15 @@ int mt76x2_mac_process_rx(struct mt76x2_dev *dev, struct sk_buff *skb,
 	return mt76x2_mac_process_rate(status, rate);
 }
 EXPORT_SYMBOL_GPL(mt76x2_mac_process_rx);
+
+void
+mt76x2_sta_ps(struct mt76_dev *mdev, struct ieee80211_sta *sta, bool ps)
+{
+	struct mt76x2_sta *msta = (struct mt76x2_sta *)sta->drv_priv;
+	struct mt76x2_dev *dev = container_of(mdev, struct mt76x2_dev, mt76);
+	int idx = msta->wcid.idx;
+
+	mt76_stop_tx_queues(&dev->mt76, sta, true);
+	mt76x2_mac_wcid_set_drop(dev, idx, ps);
+}
+EXPORT_SYMBOL_GPL(mt76x2_sta_ps);
