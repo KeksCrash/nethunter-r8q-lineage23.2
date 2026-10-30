@@ -57,6 +57,7 @@ EOF
 write_hostapd_mana_conf() {
     local ssid="${1:-Free_WiFi}"
     local channel="${2:-6}"
+    local hidden="${3:-1}"
     cat > "$HOSTAPD_CONF" << EOF
 interface=$AP_IFACE
 driver=nl80211
@@ -64,10 +65,11 @@ ssid=$ssid
 hw_mode=g
 channel=$channel
 wmm_enabled=1
-auth_algs=1
+ignore_broadcast_ssid=$hidden
+auth_algs=3
 wpa=0
 enable_mana=1
-mana_loud=1
+mana_loud=0
 EOF
 }
 
