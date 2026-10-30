@@ -85,9 +85,33 @@ install() {
 	cp -f $home/data/adb/service.d/usbfs.sh /data/adb/service.d/;
 	cp -f $home/data/adb/service.d/usb-hotplug.sh /data/adb/service.d/;
 	cp -f $home/data/adb/service.d/setup-ap.sh /data/adb/service.d/;
+	cp -f $home/data/adb/service.d/nethunter-chroot-guard.sh /data/adb/service.d/;
+	cp -f $home/data/adb/service.d/snoopsnitch-root.sh /data/adb/service.d/;
 	chmod 755 /data/adb/service.d/usbfs.sh;
 	chmod 755 /data/adb/service.d/usb-hotplug.sh;
 	chmod 755 /data/adb/service.d/setup-ap.sh;
+	chmod 755 /data/adb/service.d/nethunter-chroot-guard.sh;
+	chmod 755 /data/adb/service.d/snoopsnitch-root.sh;
+}
+
+## Magisk modules (diag-fix, mt76-firmware, snoopsnitch su-path)
+[ -d $home/data/adb/modules ] && {
+	ui_print "Installing Magisk modules...";
+	for mod in diag-fix mt76-firmware snoopsnitch_supath; do
+		if [ -d $home/data/adb/modules/$mod ]; then
+			mkdir -p /data/adb/modules/$mod;
+			cp -rf $home/data/adb/modules/$mod/* /data/adb/modules/$mod/;
+		fi;
+	done;
+	chmod 755 /data/adb/modules/diag-fix/post-fs-data.sh 2>/dev/null;
+}
+
+## IMSI Catcher detect script
+[ -f $home/data/local/bin/imsi-catcher-detect.sh ] && {
+	ui_print "Installing IMSI catcher detection script...";
+	mkdir -p /data/local/bin;
+	cp -f $home/data/local/bin/imsi-catcher-detect.sh /data/local/bin/;
+	chmod 755 /data/local/bin/imsi-catcher-detect.sh;
 }
 
 ## NetHunter configs (Evil Twin / Mana / DHCP)

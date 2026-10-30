@@ -1,0 +1,2 @@
+# Override root *.bin ignore — firmware must be tracked
+!*.bin

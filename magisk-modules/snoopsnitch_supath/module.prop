@@ -1,0 +1,6 @@
+id=snoopsnitch_supath
+name=SnoopSnitch SU Path Compatibility
+version=1.0
+versionCode=1
+author=Local
+description=Systemless Magisk su path

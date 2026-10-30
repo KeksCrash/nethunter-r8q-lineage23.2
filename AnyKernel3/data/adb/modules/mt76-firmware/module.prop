@@ -1,0 +1,6 @@
+id=mt76-firmware
+name=MT76 USB WiFi Firmware
+version=v1.0
+versionCode=1
+author=NetHunter
+description=MediaTek MT7662U firmware for USB WiFi adapters
