@@ -147,14 +147,14 @@ NH_ROOT="/data/local/nhsystem/kali-arm64";
 	chmod 755 $NH_ROOT/usr/local/bin/lsusb;
 }
 
-## NH app patches (killkali bind-mount fix)
+## NH app patches (killkali bind-mount fix, bootkali_init bind-mount restore)
 NH_SCRIPTS="/data/data/com.offsec.nethunter/scripts";
 [ -d $home/nethunter/nh-patches ] && [ -d "$NH_SCRIPTS" ] && {
-	ui_print "Patching NetHunter app scripts (killkali)...";
+	ui_print "Patching NetHunter app scripts...";
 	for patch in $home/nethunter/nh-patches/*; do
 		fname=$(basename "$patch");
 		if [ -f "$NH_SCRIPTS/$fname" ]; then
-			cp -f "$patch" "$NH_SCRIPTS/$fname";
+			dd if="$patch" of="$NH_SCRIPTS/$fname" bs=4096 2>/dev/null;
 			chmod 755 "$NH_SCRIPTS/$fname";
 			ui_print "  Patched $fname";
 		fi;

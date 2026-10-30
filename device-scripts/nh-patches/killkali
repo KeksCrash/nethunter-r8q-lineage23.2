@@ -134,10 +134,7 @@ case $res in
 0)
     bklog "[!] $MNT is a mountpoint (bind-mount chroot)"
     f_bindmount_umount
-    if $BUSYBOX mountpoint -q "$MNT"; then
-        $BUSYBOX umount -l "$MNT" 2>/dev/null
-        bklog "[+] umounted bind-mount $MNT"
-    fi
+    bklog "[+] Bind-mount kept active so NH app still sees the chroot"
     ;;
 1)
     bklog "[!] $MNT is NOT a mountpoint"
@@ -145,13 +142,24 @@ case $res in
     ;;
 esac
 
-if [ -z "$(grep "$MNT" /proc/mounts)" ]; then
-    bklog "[+] All done."
-    isAllunmounted=0
+if [ "$res" -eq 0 ]; then
+    ## Bind-mount case: inner mounts gone, bind-mount intentionally kept
+    if [ -z "$(grep "$MNT/" /proc/mounts)" ]; then
+        bklog "[+] All done. (bind-mount preserved)"
+        isAllunmounted=0
+    else
+        bklog "[-] there are still inner mounts not unmounted yet."
+        isAllunmounted=1
+    fi
 else
-    bklog "[-] there are still mounted points not unmounted yet."
-    bklog "[-] Try run this script again and see if they can be unmounted now."
-    isAllunmounted=1
+    if [ -z "$(grep "$MNT" /proc/mounts)" ]; then
+        bklog "[+] All done."
+        isAllunmounted=0
+    else
+        bklog "[-] there are still mounted points not unmounted yet."
+        bklog "[-] Try run this script again and see if they can be unmounted now."
+        isAllunmounted=1
+    fi
 fi
 
 return $isAllunmounted
