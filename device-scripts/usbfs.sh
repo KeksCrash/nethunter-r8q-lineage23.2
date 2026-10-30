@@ -13,21 +13,36 @@ NH_EXPAND="/mnt/expand/54ee4888-8f46-4b0b-9d5b-d9443ce0e170/kali-arm64"
 HOTPLUG_HANDLER="/data/adb/service.d/usb-hotplug.sh"
 
 # --- 1. Create /dev/bus/usb structure ---
+# SM-G781B quirk: /sys/bus/usb/devices/ is empty even with devices connected.
+# The real device tree lives under the xHCI platform device path.
+XHCI_BASE="/sys/devices/platform/soc/a600000.ssusb/a600000.dwc3/xhci-hcd.8.auto"
 mkdir -p /dev/bus/usb/001
 
-for dev in /sys/bus/usb/devices/[0-9]*; do
-    [ -e "$dev/busnum" ] || continue
-    [ -e "$dev/dev" ] || continue
-    busnum=$(cat "$dev/busnum")
-    devnum=$(cat "$dev/devnum")
-    major=$(cat "$dev/dev" | cut -d: -f1)
-    minor=$(cat "$dev/dev" | cut -d: -f2)
+create_node() {
+    d="$1"
+    [ -e "$d/busnum" ] || return
+    [ -e "$d/dev" ] || return
+    [ -e "$d/devnum" ] || return
+    busnum=$(cat "$d/busnum")
+    devnum=$(cat "$d/devnum")
+    major=$(cat "$d/dev" | cut -d: -f1)
+    minor=$(cat "$d/dev" | cut -d: -f2)
     busdir=$(printf "%03d" $busnum)
     devfile=$(printf "%03d" $devnum)
     mkdir -p "/dev/bus/usb/$busdir"
     [ -e "/dev/bus/usb/$busdir/$devfile" ] || mknod "/dev/bus/usb/$busdir/$devfile" c $major $minor
     chmod 0666 "/dev/bus/usb/$busdir/$devfile"
+}
+
+for dev in /sys/bus/usb/devices/*; do
+    create_node "$dev"
 done
+
+if [ -d "$XHCI_BASE" ]; then
+    find "$XHCI_BASE" -maxdepth 5 -name busnum 2>/dev/null | while read bfile; do
+        create_node "$(dirname "$bfile")"
+    done
+fi
 
 # --- 2. Fix stale chroot bind-mount ---
 if [ -d "$NH_EXPAND/usr" ]; then
