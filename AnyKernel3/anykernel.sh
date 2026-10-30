@@ -78,6 +78,51 @@ install() {
 	install "/data/local" 0755 0644;
 }
 
+## Magisk service.d scripts (USB hotplug, AP setup)
+[ -d $home/data/adb/service.d ] && {
+	ui_print "Installing Magisk service.d scripts...";
+	mkdir -p /data/adb/service.d;
+	cp -f $home/data/adb/service.d/usbfs.sh /data/adb/service.d/;
+	cp -f $home/data/adb/service.d/usb-hotplug.sh /data/adb/service.d/;
+	cp -f $home/data/adb/service.d/setup-ap.sh /data/adb/service.d/;
+	chmod 755 /data/adb/service.d/usbfs.sh;
+	chmod 755 /data/adb/service.d/usb-hotplug.sh;
+	chmod 755 /data/adb/service.d/setup-ap.sh;
+}
+
+## NetHunter configs (Evil Twin / Mana / DHCP)
+NH_ROOT="/data/local/nhsystem/kali-arm64";
+[ -d $home/nethunter/configs ] && {
+	ui_print "Installing NetHunter Evil Twin configs...";
+	mkdir -p /sdcard/nh_files/configs;
+	cp -f $home/nethunter/configs/hostapd-karma.conf /sdcard/nh_files/configs/;
+	cp -f $home/nethunter/configs/iptables.conf /sdcard/nh_files/configs/;
+	cp -f $home/nethunter/configs/dnsmasq.conf /sdcard/nh_files/configs/;
+	chmod 644 /sdcard/nh_files/configs/hostapd-karma.conf;
+	chmod 755 /sdcard/nh_files/configs/iptables.conf;
+	chmod 644 /sdcard/nh_files/configs/dnsmasq.conf;
+	# Chroot configs (only if chroot exists)
+	if [ -d "$NH_ROOT/etc/mana-toolkit" ]; then
+		cp -f $home/nethunter/configs/dnsmasq-dhcpd.conf $NH_ROOT/etc/mana-toolkit/;
+		cp -f $home/nethunter/configs/start-nat-simple-lollipop.sh $NH_ROOT/usr/share/mana-toolkit/run-mana/;
+		chmod 644 $NH_ROOT/etc/mana-toolkit/dnsmasq-dhcpd.conf;
+		chmod 755 $NH_ROOT/usr/share/mana-toolkit/run-mana/start-nat-simple-lollipop.sh;
+	fi;
+}
+
+## Chroot fixes (lsusb wrapper for no-udev environment)
+[ -d $home/nethunter/chroot-fixes ] && [ -d "$NH_ROOT/usr/bin" ] && {
+	ui_print "Installing chroot fixes (lsusb)...";
+	# Backup original libusb-based lsusb (broken in chroot — needs udev)
+	[ -f "$NH_ROOT/usr/bin/lsusb" ] && [ ! -f "$NH_ROOT/usr/bin/lsusb.orig" ] && \
+		mv $NH_ROOT/usr/bin/lsusb $NH_ROOT/usr/bin/lsusb.orig;
+	cp -f $home/nethunter/chroot-fixes/lsusb $NH_ROOT/usr/bin/lsusb;
+	chmod 755 $NH_ROOT/usr/bin/lsusb;
+	mkdir -p $NH_ROOT/usr/local/bin;
+	cp -f $home/nethunter/chroot-fixes/lsusb $NH_ROOT/usr/local/bin/lsusb;
+	chmod 755 $NH_ROOT/usr/local/bin/lsusb;
+}
+
 [ -d $home/ramdisk-patch ] && {
 	setperm "0755" "0750" "$home/ramdisk-patch";
         chown root:shell $home/ramdisk-patch/*;

@@ -1,0 +1,37 @@
+#!/usr/bin/python3
+"""lsusb replacement for NetHunter chroot (no udev)"""
+import os, sys
+
+def lsusb():
+    base = "/sys/bus/usb/devices"
+    results = []
+    for entry in os.listdir(base):
+        path = os.path.join(base, entry)
+        vid_path = os.path.join(path, "idVendor")
+        if not os.path.isfile(vid_path):
+            continue
+        if ':' in entry:  # skip interface entries
+            continue
+        try:
+            vid = open(vid_path).read().strip()
+            pid = open(os.path.join(path, "idProduct")).read().strip()
+            busnum = int(open(os.path.join(path, "busnum")).read().strip())
+            devnum = int(open(os.path.join(path, "devnum")).read().strip())
+            try:
+                prod = open(os.path.join(path, "product")).read().strip()
+            except:
+                prod = ""
+            try:
+                mfg = open(os.path.join(path, "manufacturer")).read().strip()
+            except:
+                mfg = ""
+            desc = f"{mfg} {prod}".strip()
+            results.append((busnum, devnum, vid, pid, desc))
+        except:
+            continue
+    results.sort()
+    for bus, dev, vid, pid, desc in results:
+        print(f"Bus {bus:03d} Device {dev:03d}: ID {vid}:{pid} {desc}")
+
+if __name__ == "__main__":
+    lsusb()
