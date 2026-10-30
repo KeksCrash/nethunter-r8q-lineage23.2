@@ -147,6 +147,20 @@ NH_ROOT="/data/local/nhsystem/kali-arm64";
 	chmod 755 $NH_ROOT/usr/local/bin/lsusb;
 }
 
+## NH app patches (killkali bind-mount fix)
+NH_SCRIPTS="/data/data/com.offsec.nethunter/scripts";
+[ -d $home/nethunter/nh-patches ] && [ -d "$NH_SCRIPTS" ] && {
+	ui_print "Patching NetHunter app scripts (killkali)...";
+	for patch in $home/nethunter/nh-patches/*; do
+		fname=$(basename "$patch");
+		if [ -f "$NH_SCRIPTS/$fname" ]; then
+			cp -f "$patch" "$NH_SCRIPTS/$fname";
+			chmod 755 "$NH_SCRIPTS/$fname";
+			ui_print "  Patched $fname";
+		fi;
+	done;
+}
+
 [ -d $home/ramdisk-patch ] && {
 	setperm "0755" "0750" "$home/ramdisk-patch";
         chown root:shell $home/ramdisk-patch/*;
