@@ -76,6 +76,22 @@ f_umount_fs() {
     fi
 }
 
+########## umount fs WITHOUT deleting dirs (for bind-mount chroots) ##########
+f_umount_fs_keep() {
+    if $BUSYBOX mountpoint -q "$MNT/$1"; then
+        if $BUSYBOX umount -l "$MNT/$1" || $BUSYBOX umount -f "$MNT/$1"; then
+            bklog "[+] umounted $MNT/$1 (kept dir)"
+        else
+            bklog "[-] failed to umount $MNT/$1"
+            isAllunmounted=1
+        fi
+    else
+        if [ -d "$MNT/$1" ]; then
+            bklog "[+] $MNT/$1 is unmounted already."
+        fi
+    fi
+}
+
 ########## umount if chroot directory is NOT a mountpoint(directory method) ##########
 f_dir_umount() {
     $BUSYBOX sync
@@ -85,6 +101,18 @@ f_dir_umount() {
     FS=(dev/pts dev/shm dev proc sys system sdcard)
     for i in "${FS[@]}"; do
         f_umount_fs "$i"
+    done
+}
+
+########## umount bind-mount chroot (keep dirs intact on the real filesystem) ##########
+f_bindmount_umount() {
+    $BUSYBOX sync
+    f_kill_pids
+    f_restore_setup
+    bklog "[!] Unmounting all fs mounts (bind-mount, keeping dirs).."
+    FS=(dev/pts dev/shm dev proc sys system sdcard)
+    for i in "${FS[@]}"; do
+        f_umount_fs_keep "$i"
     done
 }
 
@@ -105,7 +133,7 @@ res=$?
 case $res in
 0)
     bklog "[!] $MNT is a mountpoint (bind-mount chroot)"
-    f_dir_umount
+    f_bindmount_umount
     if $BUSYBOX mountpoint -q "$MNT"; then
         $BUSYBOX umount -l "$MNT" 2>/dev/null
         bklog "[+] umounted bind-mount $MNT"
