@@ -109,7 +109,7 @@ f_mount_fs_to_kali() {
 
     ######### SET SYS ########
     mkdir -p "$MNT/sys"
-    $BUSYBOX mount -t sysfs sys "$MNT/sys" && bklog "[+] mounted /sys"
+    $BUSYBOX mount -o bind /sys "$MNT/sys" && bklog "[+] bind-mounted /sys"
 
     ######### SET SYSTEM ########
     mkdir -p "$MNT/system"

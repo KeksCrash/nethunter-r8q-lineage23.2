@@ -1,92 +1,95 @@
 #!/usr/bin/python3
 """lsusb replacement for NetHunter chroot (no udev).
-Scans both /sys/bus/usb/devices/ and the xHCI platform device tree
-(SM-G781B quirk: bus symlinks are empty, real devices live under xHCI).
-Includes a timeout on sysfs reads to avoid hanging on suspended devices."""
-import os, sys, signal, glob
+Scans the xHCI platform device tree and /sys/bus/usb/devices/.
+SM-G781B quirk: /sys/bus/usb/devices/ is often empty; real devices
+live under the xHCI platform path. Uses per-file read timeout to
+avoid hanging on suspended USB devices."""
+import os, sys, signal
 
 XHCI_BASE = "/sys/devices/platform/soc/a600000.ssusb/a600000.dwc3/xhci-hcd.8.auto"
 SYSFS_BASE = "/sys/bus/usb/devices"
-READ_TIMEOUT = 5
+READ_TIMEOUT = 3
+MAX_DEPTH = 6
 
-class SysfsTimeout(Exception):
+
+class _Timeout(Exception):
     pass
 
-def _timeout_handler(signum, frame):
-    raise SysfsTimeout()
+
+def _alarm(signum, frame):
+    raise _Timeout()
+
 
 def safe_read(path):
-    """Read a sysfs file with a timeout to avoid blocking on suspended devices."""
-    old = signal.signal(signal.SIGALRM, _timeout_handler)
+    old = signal.signal(signal.SIGALRM, _alarm)
     signal.alarm(READ_TIMEOUT)
     try:
         with open(path) as f:
             return f.read().strip()
-    except SysfsTimeout:
-        return None
-    except (OSError, IOError):
+    except (_Timeout, OSError, IOError):
         return None
     finally:
         signal.alarm(0)
         signal.signal(signal.SIGALRM, old)
 
+
+def find_device_dirs(base, depth=0):
+    """Recursively find dirs containing idVendor, with depth limit."""
+    if depth > MAX_DEPTH:
+        return
+    try:
+        entries = os.listdir(base)
+    except (OSError, IOError):
+        return
+    if "idVendor" in entries and "busnum" in entries:
+        yield base
+    for e in entries:
+        if e.startswith(".") or ":" in e:
+            continue
+        p = os.path.join(base, e)
+        try:
+            if os.path.isdir(p) and not os.path.islink(p):
+                yield from find_device_dirs(p, depth + 1)
+        except (OSError, IOError):
+            continue
+
+
 def scan_device(path, seen):
-    """Read one USB device from its sysfs directory."""
-    vid_path = os.path.join(path, "idVendor")
-    if not os.path.isfile(vid_path):
-        return None
-    vid = safe_read(vid_path)
-    if vid is None:
+    vid = safe_read(os.path.join(path, "idVendor"))
+    if not vid:
         return None
     pid = safe_read(os.path.join(path, "idProduct"))
     busnum = safe_read(os.path.join(path, "busnum"))
     devnum = safe_read(os.path.join(path, "devnum"))
     if None in (pid, busnum, devnum):
         return None
-    key = (int(busnum), int(devnum))
+    try:
+        key = (int(busnum), int(devnum))
+    except ValueError:
+        return None
     if key in seen:
         return None
     seen.add(key)
     prod = safe_read(os.path.join(path, "product")) or ""
     mfg = safe_read(os.path.join(path, "manufacturer")) or ""
-    desc = f"{mfg} {prod}".strip()
+    desc = "{} {}".format(mfg, prod).strip()
     return (key[0], key[1], vid, pid, desc)
 
-def find_xhci_devices():
-    """Walk the xHCI device tree and find directories with busnum."""
-    paths = []
-    if not os.path.isdir(XHCI_BASE):
-        return paths
-    for root, dirs, files in os.walk(XHCI_BASE):
-        if "busnum" in files and "idVendor" in files:
-            paths.append(root)
-        if root.count(os.sep) - XHCI_BASE.count(os.sep) > 5:
-            dirs.clear()
-    return paths
 
 def lsusb():
     results = []
     seen = set()
-
-    # Path 1: standard sysfs bus
-    if os.path.isdir(SYSFS_BASE):
-        for entry in os.listdir(SYSFS_BASE):
-            if ':' in entry:
-                continue
-            path = os.path.join(SYSFS_BASE, entry)
+    for base in [SYSFS_BASE, XHCI_BASE]:
+        if not os.path.isdir(base):
+            continue
+        for path in find_device_dirs(base):
             r = scan_device(path, seen)
             if r:
                 results.append(r)
-
-    # Path 2: xHCI platform device tree (SM-G781B quirk)
-    for path in find_xhci_devices():
-        r = scan_device(path, seen)
-        if r:
-            results.append(r)
-
     results.sort()
     for bus, dev, vid, pid, desc in results:
-        print(f"Bus {bus:03d} Device {dev:03d}: ID {vid}:{pid} {desc}")
+        print("Bus {:03d} Device {:03d}: ID {}:{} {}".format(bus, dev, vid, pid, desc))
+
 
 if __name__ == "__main__":
     lsusb()
