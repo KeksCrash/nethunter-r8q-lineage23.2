@@ -14,28 +14,72 @@ echo ""
 
 # 1. Android Clang (r547379)
 CLANG_DIR="$PARENT_DIR/clang"
+
+# Remove broken symlinks without creating backups.
+if [ -L "$CLANG_DIR" ] && [ ! -e "$CLANG_DIR" ]; then
+    echo "[FIX] Removing broken Clang symlink"
+    rm -- "$CLANG_DIR"
+fi
+
+# Preserve valid installations.
 if [ -x "$CLANG_DIR/bin/clang" ]; then
-    echo "[OK] Clang already installed at $CLANG_DIR"
+    echo "[OK] Clang already installed"
 else
-    echo "[*] Downloading Android Clang r547379..."
+    # Do not overwrite real files or unrelated directories.
+    if [ -e "$CLANG_DIR" ] && [ ! -d "$CLANG_DIR" ]; then
+        echo "[ERROR] Clang path is occupied: $CLANG_DIR"
+        exit 1
+    fi
+
     mkdir -p "$CLANG_DIR"
-    CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz"
-    # Try the prebuilt archive first, fall back to GitHub mirror
-    if ! curl -fSL "$CLANG_URL" | tar xz -C "$CLANG_DIR" 2>/dev/null; then
-        echo "[*] Trying alternative: cloning from AOSP prebuilts..."
-        git clone --depth=1 --single-branch \
-            https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 \
-            /tmp/clang-prebuilts 2>/dev/null || true
-        if [ -d "/tmp/clang-prebuilts/clang-r547379" ]; then
-            cp -a /tmp/clang-prebuilts/clang-r547379/* "$CLANG_DIR/"
-            rm -rf /tmp/clang-prebuilts
-        else
-            echo "[!] Could not download clang r547379 automatically."
-            echo "    Please download it manually and extract to: $CLANG_DIR"
-            echo "    Source: https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+/refs/heads/main/clang-r547379/"
+
+    # Reuse an existing Android Clang toolchain if available.
+    for candidate in \
+        "$DIR/toolchain/clang-r547379" \
+        "$PARENT_DIR/toolchain/clang-r547379"
+    do
+        if [ -x "$candidate/bin/clang" ]; then
+            echo "[OK] Reusing $candidate"
+            cp -a "$candidate/." "$CLANG_DIR/"
+            break
         fi
+    done
+
+    if [ ! -x "$CLANG_DIR/bin/clang" ]; then
+        echo "[*] Downloading Android Clang r547379..."
+
+        CLANG_URL="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz"
+
+        TMP_ARCHIVE="$(mktemp)"
+        TMP_DIR="$(mktemp -d)"
+
+        cleanup_clang() {
+            rm -f -- "$TMP_ARCHIVE"
+            rm -rf -- "$TMP_DIR"
+        }
+        trap cleanup_clang EXIT
+
+        if curl -fL --retry 3 -o "$TMP_ARCHIVE" "$CLANG_URL" &&
+           tar -xzf "$TMP_ARCHIVE" -C "$TMP_DIR" &&
+           [ -x "$TMP_DIR/bin/clang" ]; then
+            cp -a "$TMP_DIR/." "$CLANG_DIR/"
+        else
+            echo "[ERROR] Clang download or extraction failed"
+            exit 1
+        fi
+
+        cleanup_clang
+        trap - EXIT
     fi
 fi
+
+if [ ! -x "$CLANG_DIR/bin/clang" ]; then
+    echo "[ERROR] Clang installation incomplete"
+    exit 1
+fi
+
+echo "[OK] Android Clang ready: $CLANG_DIR"
+"$CLANG_DIR/bin/clang" --version | head -1
 
 # 2. GCC 4.9 Cross Compiler (aarch64-linux-android)
 GCC_DIR="$PARENT_DIR/aarch64-linux-android-4.9"
@@ -59,36 +103,68 @@ if [ ! -d "$PARENT_DIR/AnyKernel3" ]; then
     cp -rf "$DIR/AnyKernel3" "$PARENT_DIR/AnyKernel3"
 fi
 
-# 5. Host dependencies check
+# 5. Host dependencies
 echo ""
 echo "=== Checking host dependencies ==="
-MISSING=""
-for cmd in make gcc flex bison bc libssl-dev; do
-    case "$cmd" in
-        libssl-dev)
-            if ! dpkg -l libssl-dev &>/dev/null && ! rpm -q openssl-devel &>/dev/null; then
-                MISSING="$MISSING $cmd"
-            else
-                echo "[OK] $cmd"
-            fi
-            ;;
-        *)
-            if command -v "$cmd" &>/dev/null; then
-                echo "[OK] $cmd ($(command -v "$cmd"))"
-            else
-                MISSING="$MISSING $cmd"
-            fi
-            ;;
-    esac
-done
 
-if [ -n "$MISSING" ]; then
-    echo ""
-    echo "[!] Missing host packages:$MISSING"
-    echo "    Install with: sudo apt install -y$MISSING (Debian/Ubuntu)"
-    echo "    Or: sudo pacman -S$MISSING (Arch)"
-    exit 1
+if command -v pacman >/dev/null 2>&1; then
+    PACKAGES=(
+        base-devel git curl wget
+        flex bison bc openssl
+        libelf pahole dtc
+        python python-pip
+        zip unzip cpio perl rsync
+        android-tools jdk17-openjdk
+    )
+
+    MISSING=()
+
+    for pkg in "${PACKAGES[@]}"; do
+        if pacman -Qq "$pkg" >/dev/null 2>&1; then
+            echo "[OK] $pkg"
+        else
+            echo "[MISSING] $pkg"
+            MISSING+=("$pkg")
+        fi
+    done
+
+    if ((${#MISSING[@]} > 0)); then
+        echo "[*] Installing missing packages..."
+        sudo pacman -S --needed "${MISSING[@]}"
+    fi
+
+elif command -v apt-get >/dev/null 2>&1; then
+    PACKAGES=(
+        build-essential git curl wget
+        flex bison bc libssl-dev libelf-dev
+        dwarves device-tree-compiler
+        python3 python3-pip
+        zip unzip cpio perl rsync
+        adb openjdk-17-jdk
+    )
+
+    MISSING=()
+
+    for pkg in "${PACKAGES[@]}"; do
+        if dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null |
+           grep -q "install ok installed"; then
+            echo "[OK] $pkg"
+        else
+            MISSING+=("$pkg")
+        fi
+    done
+
+    if ((${#MISSING[@]} > 0)); then
+        sudo apt-get update
+        sudo apt-get install -y "${MISSING[@]}"
+    fi
+
+else
+    echo "[WARNING] Unsupported package manager"
+    echo "[WARNING] Host dependencies must be checked manually"
 fi
+
+echo "[OK] Host dependency check completed"
 
 # 6. Android SDK check (for IMSI Catcher App)
 echo ""
