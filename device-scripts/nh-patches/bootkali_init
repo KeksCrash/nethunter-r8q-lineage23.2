@@ -148,6 +148,11 @@ f_mount_fs_to_kali() {
     echo "::1				 localhost ip6-localhost ip6-loopback" >> "$MNT/etc/hosts"
     echo "kali" > "$MNT/proc/sys/kernel/hostname"
 
+    ######### SET BLUETOOTH ########
+    chmod 666 "$MNT/dev/vhci" 2>/dev/null && bklog "[+] set /dev/vhci permissions"
+    chmod 666 "$MNT/dev/uhid" 2>/dev/null && bklog "[+] set /dev/uhid permissions"
+    mkdir -p "$MNT/var/run/sdp"
+
     ######### Setup done #########
     bklog "[+] The Kali chroot has been started."
 }

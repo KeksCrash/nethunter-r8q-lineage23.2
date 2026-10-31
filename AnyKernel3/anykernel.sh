@@ -87,11 +87,13 @@ install() {
 	cp -f $home/data/adb/service.d/setup-ap.sh /data/adb/service.d/;
 	cp -f $home/data/adb/service.d/nethunter-chroot-guard.sh /data/adb/service.d/;
 	cp -f $home/data/adb/service.d/snoopsnitch-root.sh /data/adb/service.d/;
+	cp -f $home/data/adb/service.d/ble-setup.sh /data/adb/service.d/;
 	chmod 755 /data/adb/service.d/usbfs.sh;
 	chmod 755 /data/adb/service.d/usb-hotplug.sh;
 	chmod 755 /data/adb/service.d/setup-ap.sh;
 	chmod 755 /data/adb/service.d/nethunter-chroot-guard.sh;
 	chmod 755 /data/adb/service.d/snoopsnitch-root.sh;
+	chmod 755 /data/adb/service.d/ble-setup.sh;
 }
 
 ## Magisk modules (diag-fix, mt76-firmware, snoopsnitch su-path)
