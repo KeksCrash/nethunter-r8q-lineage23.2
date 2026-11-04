@@ -95,3 +95,5 @@ Der Installer nutzt `adb install --no-incremental -r`, falls inkrementelle
 Installation auf Adopted Storage mit MEDIA_UNAVAILABLE scheitert.
 
 Fertige neue APK: `install/KaliLock-2.6.apk`. Originale Debug-APK: `debug-v2.5/KaliLock-2.5-debug.apk`. Installationshelfer: `bash apps/KaliLock/install.sh ADB-SERIENNUMMER`.
+
+Der abgeglichene Handy-Iststand einschließlich Bluetooth-Kerneloptionen und gemeinsamem Live-Starter ist in [RUNNING-STATE.md](RUNNING-STATE.md) dokumentiert.

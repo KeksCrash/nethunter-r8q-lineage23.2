@@ -1148,6 +1148,12 @@ static int qca_setup(struct hci_uart *hu)
 	int ret;
 	int soc_ver = 0;
 
+	/* TTY btattach has no serdev: reject before dereferencing it. */
+	if (!hu->serdev) {
+		bt_dev_err(hdev, "QCA: no serdev for TTY attachment");
+		return -ENODEV;
+	}
+
 	qcadev = serdev_device_get_drvdata(hu->serdev);
 
 	ret = qca_check_speeds(hu);
