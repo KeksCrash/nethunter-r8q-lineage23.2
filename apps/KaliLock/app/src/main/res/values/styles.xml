@@ -1,0 +1,11 @@
+<resources>
+    <style name="KaliLockTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:colorAccent">#FF2323</item>
+        <item name="android:colorControlActivated">#FF2323</item>
+        <item name="android:statusBarColor">#0A0306</item>
+        <item name="android:navigationBarColor">#0A0306</item>
+        <item name="android:windowBackground">#0A0306</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:fontFamily">sans</item>
+    </style>
+</resources>

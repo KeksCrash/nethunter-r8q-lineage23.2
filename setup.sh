@@ -184,6 +184,13 @@ if [ -z "$ANDROID_BT" ]; then
     echo "    Install: https://developer.android.com/studio#command-line-tools-only"
 fi
 
+# Optional: apply the companion userspace patches to an explicitly supplied ROM tree.
+# The kernel build below cannot rebuild the NFC APEX itself.
+if [ -n "${KALILOCK_ROM_SOURCE:-}" ]; then
+    python3 "$DIR/apps/KaliLock/nfc-patches/apply.py" "$KALILOCK_ROM_SOURCE" --check
+    python3 "$DIR/apps/KaliLock/nfc-patches/apply.py" "$KALILOCK_ROM_SOURCE"
+fi
+
 # 7. Build kernel
 echo ""
 echo "=== Building kernel ==="
@@ -192,13 +199,18 @@ KERNEL_ZIP="$PARENT_DIR/build/r8q/Nethunter_r8q_v1.0.zip"
 
 # 8. Build IMSI Catcher App (if SDK available)
 APK_PATH=""
+KALILOCK_APK=""
 if [ -n "$ANDROID_BT" ]; then
     echo ""
     echo "=== Building IMSI Catcher App ==="
     (cd "$DIR/apps/ImsiCatcher" && bash build.sh)
     APK_PATH="$DIR/apps/ImsiCatcher/build/ImsiCatcher.apk"
+    echo "=== Building Kali Lock ==="
+    bash "$DIR/apps/KaliLock/build.sh" install
+    KALILOCK_APK="$DIR/apps/KaliLock/build/install/KaliLock.apk"
 fi
 
+# Apps-only entry point is apps/KaliLock/build.sh; full setup keeps both apps together.
 # 9. Summary
 echo ""
 echo "========================================="
@@ -206,6 +218,10 @@ echo "=== Build complete ==="
 echo "========================================="
 echo ""
 echo "Kernel ZIP:  $KERNEL_ZIP"
+if [ -n "$KALILOCK_APK" ] && [ -f "$KALILOCK_APK" ]; then
+    echo "Kali Lock:   $KALILOCK_APK"
+    echo "Install:     adb install --no-incremental -r \"$KALILOCK_APK\""
+fi
 if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
     echo "IMSI App:    $APK_PATH"
 fi

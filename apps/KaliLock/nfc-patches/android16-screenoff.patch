@@ -1,0 +1,40 @@
+--- a/NfcNci/src/com/android/nfc/NfcService.java
++++ b/NfcNci/src/com/android/nfc/NfcService.java
+@@ -6010,6 +6010,12 @@
+     };
+ 
+     private void applyScreenState(int screenState) {
++        // KALILOCK_LOCKED_SCREEN_POLL: keep existing lockscreen handlers active with display off.
++        if (screenState == ScreenStateHelper.SCREEN_STATE_OFF_LOCKED
++                && mNfcUnlockManager.isLockscreenPollingEnabled()) {
++            screenState = ScreenStateHelper.SCREEN_STATE_ON_LOCKED;
++        }
++
+         if (mFeatureFlags.reduceStateTransition()
+                 && mIsWatchType && !mCardEmulationManager.isRequiresScreenOnServiceExist()) {
+             if (screenState == ScreenStateHelper.SCREEN_STATE_OFF_LOCKED) {
+--- a/NfcNci/src/com/android/nfc/NfcDispatcher.java
++++ b/NfcNci/src/com/android/nfc/NfcDispatcher.java
+@@ -597,9 +597,8 @@
+ 
+         boolean screenUnlocked = false;
+         if (!provisioningOnly &&
+-                mScreenStateHelper.checkScreenState(
+-                        mDeviceConfigFacade.getCheckDisplayStateForScreenState())
+-                        == ScreenStateHelper.SCREEN_STATE_ON_LOCKED) {
++                isKaliLockLockedScreen(mScreenStateHelper.checkScreenState(
++                        mDeviceConfigFacade.getCheckDisplayStateForScreenState()))) {
+             screenUnlocked = handleNfcUnlock(tag);
+             if (!screenUnlocked)
+                 return DISPATCH_FAIL;
+@@ -1435,4 +1434,10 @@
+             return false;
+         }
+     }
++
++    // KALILOCK_LOCKED_SCREEN_DISPATCH: only route to existing handlers; never authorize by UID.
++    private static boolean isKaliLockLockedScreen(int state) {
++        return state == ScreenStateHelper.SCREEN_STATE_ON_LOCKED
++                || state == ScreenStateHelper.SCREEN_STATE_OFF_LOCKED;
++    }
+ }

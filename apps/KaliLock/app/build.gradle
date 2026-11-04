@@ -1,0 +1,6 @@
+plugins { id 'com.android.application' }
+
+android { namespace 'de.nethunter.flippernfc'; compileSdk 35
+ defaultConfig { applicationId 'de.nethunter.flipperunified'; minSdk 28; targetSdk 28; versionCode 260; versionName '2.6-kalilock' }
+ compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
