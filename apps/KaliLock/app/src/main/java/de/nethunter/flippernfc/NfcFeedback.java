@@ -11,10 +11,12 @@ final class NfcFeedback {
  private static final String KEY="vibration_enabled";
  private NfcFeedback() {}
  static boolean enabled(Context context) {
-  return context.getSharedPreferences(PREF,Context.MODE_PRIVATE).getBoolean(KEY,true);
+  Context target=DirectBootUnlock.userUnlocked(context)?context:DirectBootUnlock.device(context);
+  return target.getSharedPreferences(PREF,Context.MODE_PRIVATE).getBoolean(KEY,true);
  }
  static void setEnabled(Context context,boolean enabled) {
   context.getSharedPreferences(PREF,Context.MODE_PRIVATE).edit().putBoolean(KEY,enabled).apply();
+  DirectBootUnlock.device(context).getSharedPreferences(PREF,Context.MODE_PRIVATE).edit().putBoolean(KEY,enabled).apply();
  }
  static void vibrateOnDetection(Context context) {
   if(!enabled(context))return;

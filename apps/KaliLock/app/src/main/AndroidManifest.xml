@@ -1,14 +1,22 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" android:installLocation="internalOnly">
   <uses-permission android:name="android.permission.NFC"/>
   <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"/>
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
   <uses-permission android:name="android.permission.WAKE_LOCK"/>
   <uses-permission android:name="android.permission.VIBRATE"/>
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
   <uses-feature android:name="android.hardware.nfc" android:required="true"/>
-  <application android:theme="@style/KaliLockTheme" android:label="Kali Lock" android:icon="@drawable/ic_kalilock" android:allowBackup="false" android:usesCleartextTraffic="false">
+  <application android:theme="@style/KaliLockTheme" android:label="Kari Nethunter" android:icon="@drawable/ic_kalilock" android:allowBackup="false" android:usesCleartextTraffic="false">
     <activity android:name="de.nethunter.flippernfc.MainActivity" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity>
-    <service android:name="de.nethunter.flippernfc.NfcWatchService" android:exported="false"/>
-    <service android:name="de.nethunter.flippernfc.LockPasswordIme" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true" android:label="Kali Lock Passwort-IME">
+    <service android:name="de.nethunter.flippernfc.NfcWatchService" android:directBootAware="true" android:exported="false"/>
+    <receiver android:name="de.nethunter.flippernfc.BootReceiver" android:directBootAware="true" android:exported="false">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED"/>
+        <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED"/>
+        <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+      </intent-filter>
+    </receiver>
+    <service android:name="de.nethunter.flippernfc.LockPasswordIme" android:directBootAware="true" android:permission="android.permission.BIND_INPUT_METHOD" android:exported="true" android:label="Kari Nethunter Passwort-IME">
       <intent-filter><action android:name="android.view.InputMethod"/></intent-filter>
       <meta-data android:name="android.view.im" android:resource="@xml/method"/>
     </service>

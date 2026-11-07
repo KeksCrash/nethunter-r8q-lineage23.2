@@ -20,8 +20,12 @@ public class LockPasswordIme extends InputMethodService {
    boolean isPassword=variation==android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD || variation==android.text.InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD || variation==android.text.InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD || variation==android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD;
    String pkg=info==null?"":info.packageName;
    boolean trusted="com.android.systemui".equals(pkg)||"com.android.keyguard".equals(pkg);
+   KeyguardManager guard=(KeyguardManager)getSystemService(Context.KEYGUARD_SERVICE);
+   boolean locked=guard!=null&&guard.isDeviceLocked();
+   boolean selected=PinAuto.imeSelected(LockPasswordIme.this);
+   trusted=trusted&&locked&&selected;
    // Crucial: do not consume the one-use secret when Android presents another editor first.
-   if(!(isPassword&&trusted)){debug("EDITOR_REJECTED pkg="+pkg+" type="+(info==null?0:info.inputType));}
+   if(!(isPassword&&trusted)){debug("EDITOR_REJECTED pkg="+pkg+" type="+(info==null?0:info.inputType)+" locked="+locked+" selected="+selected);}
    if(isPassword&&trusted){
     NfcWatchService.log(LockPasswordIme.this,"IME_STAGE PASSWORD_EDITOR_READY pkg="+pkg);
     String secret=PinAuto.takePendingImePassword();if(secret!=null){
@@ -42,7 +46,7 @@ public class LockPasswordIme extends InputMethodService {
          EditorInfo current=getCurrentInputEditorInfo();
          InputConnection active=getCurrentInputConnection();
          String target=current==null?"":current.packageName;
-         if(active==editor && ("com.android.systemui".equals(target)||"com.android.keyguard".equals(target))){
+         if(PinAuto.deliveryStillValid()&&PinAuto.imeSelected(LockPasswordIme.this)&&active==editor && ("com.android.systemui".equals(target)||"com.android.keyguard".equals(target))){
           boolean down=active.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_ENTER));
           boolean up=active.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_ENTER));
           NfcWatchService.log(LockPasswordIme.this,"LOCK_SUBMIT_ENTER_ONCE down="+down+" up="+up);
@@ -64,8 +68,26 @@ public class LockPasswordIme extends InputMethodService {
   handler.postDelayed(this,500);
  }};
  @Override public void onCreate(){super.onCreate();handler.postDelayed(tryCommit,400);}
- @Override public void onStartInput(EditorInfo attribute,boolean restarting){super.onStartInput(attribute,restarting);debug("ON_START_INPUT pkg="+(attribute==null?"":attribute.packageName));handler.post(tryCommit);}
- @Override public void onStartInputView(EditorInfo info,boolean restarting){super.onStartInputView(info,restarting);handler.post(tryCommit);}
- @Override public void onDestroy(){handler.removeCallbacks(tryCommit);super.onDestroy();}
- @Override public View onCreateInputView(){TextView t=new TextView(this);t.setText("🔒 Kali Lock – NFC-Freigabe nur nach FIDO-Signatur");t.setTextSize(16);t.setPadding(18,20,18,20);t.setBackgroundColor(Color.rgb(6,14,23));t.setTextColor(Color.CYAN);return t;}
+ @Override public void onStartInput(EditorInfo attribute,boolean restarting){super.onStartInput(attribute,restarting);debug("ON_START_INPUT pkg="+(attribute==null?"":attribute.packageName));handler.removeCallbacks(tryCommit);handler.post(tryCommit);}
+ @Override public void onStartInputView(EditorInfo info,boolean restarting){super.onStartInputView(info,restarting);handler.removeCallbacks(tryCommit);handler.post(tryCommit);}
+ @Override public void onDestroy(){handler.removeCallbacksAndMessages(null);PinAuto.cancelPendingImePassword();super.onDestroy();}
+ private boolean upper=false,symbols=false;
+ private void manualKey(String text){PinAuto.cancelPendingImePassword();InputConnection ic=getCurrentInputConnection();if(ic!=null)ic.commitText(text,1);}
+ private void manualAction(int key){PinAuto.cancelPendingImePassword();InputConnection ic=getCurrentInputConnection();if(ic!=null){ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN,key));ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP,key));}}
+ private Button key(String label,Runnable action){Button b=new Button(this);b.setText(label);b.setAllCaps(false);b.setTextSize(12);b.setPadding(0,0,0,0);b.setMinWidth(0);b.setMinimumWidth(0);b.setOnClickListener(v->action.run());return b;}
+ private void refreshManual(){setInputView(onCreateInputView());}
+ @Override public View onCreateInputView(){
+  LinearLayout layout=new LinearLayout(this);layout.setOrientation(1);layout.setPadding(6,4,6,6);layout.setBackgroundColor(Color.rgb(6,14,23));
+  TextView title=new TextView(this);title.setText("Kari Nethunter · NFC oder manuelle Eingabe");title.setTextColor(Color.CYAN);layout.addView(title);
+  String[] rows=symbols?new String[]{"1234567890","!@#$%^&*()","-_=+[]{}",";:,.?/\\'\""}:new String[]{"1234567890","qwertyuiop","asdfghjkl","zxcvbnm"};
+  for(String row:rows){LinearLayout line=new LinearLayout(this);layout.addView(line);for(int i=0;i<row.length();i++){String ch=String.valueOf(row.charAt(i));if(upper&&!symbols)ch=ch.toUpperCase(java.util.Locale.ROOT);final String text=ch;line.addView(key(text,()->manualKey(text)),new LinearLayout.LayoutParams(0,(int)(46*getResources().getDisplayMetrics().density),1));}}
+  LinearLayout controls=new LinearLayout(this);layout.addView(controls);
+  controls.addView(key("⇧",()->{upper=!upper;refreshManual();}),new LinearLayout.LayoutParams(0,(int)(48*getResources().getDisplayMetrics().density),1));
+  controls.addView(key(symbols?"ABC":"#+=",()->{symbols=!symbols;refreshManual();}),new LinearLayout.LayoutParams(0,(int)(48*getResources().getDisplayMetrics().density),1));
+  controls.addView(key("Leer",()->manualKey(" ")),new LinearLayout.LayoutParams(0,(int)(48*getResources().getDisplayMetrics().density),2));
+  controls.addView(key("⌫",()->manualAction(KeyEvent.KEYCODE_DEL)),new LinearLayout.LayoutParams(0,(int)(48*getResources().getDisplayMetrics().density),1));
+  controls.addView(key("↵",()->manualAction(KeyEvent.KEYCODE_ENTER)),new LinearLayout.LayoutParams(0,(int)(48*getResources().getDisplayMetrics().density),1));
+  layout.addView(key("Normale Tastatur wiederherstellen",()->new Thread(()->PinAuto.recoverIme(this),"KaliLock-ManualImeRecovery").start()));
+  return layout;
+ }
 }

@@ -4,7 +4,7 @@ set -Eeuo pipefail
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 VARIANT="${1:-install}"
 case "$VARIANT" in
- install) SOURCE=app/src/main; VERSION_CODE=260; VERSION_NAME=2.6-kalilock; NAME=KaliLock ;;
+ install) SOURCE=app/src/main; VERSION_CODE=288; VERSION_NAME=2.8.8-kalilock-directboot-ime; NAME=KaliLock ;;
  debug) SOURCE=debug-v2.5/src/main; VERSION_CODE=250; VERSION_NAME=2.5-kalilock-verify-submit; NAME=KaliLock-2.5-debug ;;
  *) echo 'Aufruf: build.sh [install|debug]' >&2; exit 2 ;;
 esac

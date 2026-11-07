@@ -8,8 +8,23 @@ import sys
 
 POLL_MARKER='KALILOCK_LOCKED_SCREEN_POLL'
 DISPATCH_MARKER='KALILOCK_LOCKED_SCREEN_DISPATCH'
+BOOT_POLL_MARKER='KALILOCK_BOOT_POLLING_REFRESH'
 
 def transform(service, dispatcher):
+    if BOOT_POLL_MARKER not in service:
+        pattern=r'(public void addNfcUnlockHandler\(INfcUnlockHandler unlockHandler, int\[\] techList\)\s*\{.*?applyRouting\(false\);)'
+        matches=list(re.finditer(pattern,service,re.S))
+        if len(matches)!=1: raise ValueError('addNfcUnlockHandler mit Routing-Aufruf nicht eindeutig')
+        match=matches[0]
+        code=f'''
+            // {BOOT_POLL_MARKER}: refresh the native polling bit after late registration.
+            if (mScreenState == ScreenStateHelper.SCREEN_STATE_ON_LOCKED
+                    || mScreenState == ScreenStateHelper.SCREEN_STATE_OFF_LOCKED) {{
+                sendMessage(MSG_APPLY_SCREEN_STATE,
+                        Integer.valueOf(ScreenStateHelper.SCREEN_STATE_ON_LOCKED));
+            }}
+'''
+        service=service[:match.end()]+code+service[match.end():]
     if POLL_MARKER not in service:
         pattern=r'(\bvoid\s+applyScreenState\s*\(\s*int\s+(\w+)\s*\)\s*\{)'
         matches=list(re.finditer(pattern,service))

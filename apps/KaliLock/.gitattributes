@@ -1,1 +1,2 @@
 nfc-patches/*.patch -whitespace
+flipper/*.patch -whitespace

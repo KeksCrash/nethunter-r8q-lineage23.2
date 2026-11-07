@@ -1,0 +1,202 @@
+diff --git a/applications/external/zerofido/src/transport/nfc_engine.c b/applications/external/zerofido/src/transport/nfc_engine.c
+index f6ee6e41..b2f02437 100644
+--- a/applications/external/zerofido/src/transport/nfc_engine.c
++++ b/applications/external/zerofido/src/transport/nfc_engine.c
+@@ -23,6 +23,7 @@
+ #include <toolbox/bit_buffer.h>
+ 
+ #include "../u2f/adapter.h"
++#include "../zerofido_crypto.h"
+ #include "../zerofido_app_i.h"
+ #include "../zerofido_ui.h"
+ #include "nfc_dispatch.h"
+@@ -406,15 +407,14 @@ typedef enum {
+ } ZfNfcRxChainAppendResult;
+ 
+ static ZfNfcRxChainAppendResult
+-zf_transport_nfc_append_rx_chain_payload_locked(ZerofidoApp *app, ZfNfcTransportState *state,
++zf_transport_nfc_append_rx_chain_payload_locked(ZfNfcTransportState *state,
+                                                 uint8_t request_pcb, const uint8_t *payload,
+                                                 size_t payload_len) {
+-    uint8_t *arena = zf_transport_nfc_arena(state);
+     size_t old_request_len = 0U;
+     size_t max_chain_len = 0U;
+ 
+-    if (!app || !state || !arena || (!payload && payload_len > 0U) ||
+-        state->request_len > ZF_MAX_MSG_SIZE) {
++    if (!state || (!payload && payload_len > 0U) ||
++        state->iso4_rx_chain_len > ZF_MAX_MSG_SIZE) {
+         return ZfNfcRxChainAppendOverflow;
+     }
+ 
+@@ -424,15 +424,15 @@ zf_transport_nfc_append_rx_chain_payload_locked(ZerofidoApp *app, ZfNfcTransport
+     if (max_chain_len > ZF_MAX_MSG_SIZE) {
+         max_chain_len = ZF_MAX_MSG_SIZE;
+     }
+-    if (state->request_len > max_chain_len || payload_len > max_chain_len - state->request_len) {
++    if (state->iso4_rx_chain_len > max_chain_len || payload_len > max_chain_len - state->iso4_rx_chain_len) {
+         return ZfNfcRxChainAppendOverflow;
+     }
+ 
+     if (state->rx_chain_last_valid && state->rx_chain_last_pcb == request_pcb &&
+-        state->request_len == state->rx_chain_last_offset + state->rx_chain_last_len &&
++        state->iso4_rx_chain_len == state->rx_chain_last_offset + state->rx_chain_last_len &&
+         payload_len == state->rx_chain_last_len &&
+         (payload_len == 0U ||
+-         memcmp(&arena[state->rx_chain_last_offset], payload, payload_len) == 0)) {
++         memcmp(&state->iso4_rx_chain_data[state->rx_chain_last_offset], payload, payload_len) == 0)) {
+         const uint8_t duplicate_limit = state->reader_profile.rx_chain_duplicate_limit != 0U
+                                             ? state->reader_profile.rx_chain_duplicate_limit
+                                             : ZF_NFC_RX_CHAIN_DUPLICATE_LIMIT;
+@@ -443,12 +443,12 @@ zf_transport_nfc_append_rx_chain_payload_locked(ZerofidoApp *app, ZfNfcTransport
+         return ZfNfcRxChainAppendDuplicate;
+     }
+ 
+-    old_request_len = state->request_len;
++    old_request_len = state->iso4_rx_chain_len;
+     if (payload_len > 0U) {
+-        memcpy(&arena[state->request_len], payload, payload_len);
++        memcpy(&state->iso4_rx_chain_data[state->iso4_rx_chain_len], payload, payload_len);
+     }
+-    state->request_len += payload_len;
+-    state->command_chain_active = true;
++    state->iso4_rx_chain_len += payload_len;
++    state->iso4_rx_chain_active = true;
+     state->rx_chain_last_valid = true;
+     state->rx_chain_last_pcb = request_pcb;
+     state->rx_chain_duplicate_count = 0U;
+@@ -607,12 +607,12 @@ static NfcCommand zf_transport_nfc_handle_iso4_payload_locked(
+         return NfcCommandContinue;
+     }
+ 
+-    if (!request_chained && !state->command_chain_active && payload_len == 0U) {
++    if (!request_chained && !state->iso4_rx_chain_active && payload_len == 0U) {
+         return zf_transport_nfc_handle_empty_i_block_locked(app, state, request_pcb,
+                                                             refresh_status);
+     }
+ 
+-    if (!request_chained && !state->command_chain_active &&
++    if (!request_chained && !state->iso4_rx_chain_active &&
+         zf_transport_nfc_is_duplicate_complete_i_block_locked(state, request_pcb, payload,
+                                                               payload_len)) {
+         const bool replayed = zf_transport_nfc_replay_complete_i_block_response_locked(state);
+@@ -623,13 +623,13 @@ static NfcCommand zf_transport_nfc_handle_iso4_payload_locked(
+         return zf_transport_nfc_finish_unlocked(app, true, refresh_status, NfcCommandContinue);
+     }
+ 
+-    if (!request_chained && !state->command_chain_active &&
++    if (!request_chained && !state->iso4_rx_chain_active &&
+         zf_transport_nfc_should_sleep_post_success_probe_locked(state, payload, payload_len)) {
+         zf_transport_nfc_set_frame_status("NFC probe sleep", request_pcb, payload, payload_len);
+         return zf_transport_nfc_sleep_probe_locked(app, state, "NFC probe sleep");
+     }
+ 
+-    if (!request_chained && !state->command_chain_active &&
++    if (!request_chained && !state->iso4_rx_chain_active &&
+         (zf_transport_nfc_is_native_desfire_get_version_payload(payload, payload_len) ||
+          zf_transport_nfc_is_native_desfire_additional_frame(payload, payload_len))) {
+         if (zf_transport_nfc_handle_native_desfire_locked(
+@@ -652,7 +652,7 @@ static NfcCommand zf_transport_nfc_handle_iso4_payload_locked(
+         return NfcCommandContinue;
+     }
+ 
+-    if (!request_chained && !state->command_chain_active &&
++    if (!request_chained && !state->iso4_rx_chain_active &&
+         (state->processing || state->request_pending) && !state->response_ready &&
+         payload_len >= 2U && payload[0] == 0x80U && payload[1] == ZF_NFC_INS_CTAP_MSG) {
+         if (zf_transport_nfc_send_apdu_payload(state, (const uint8_t[]){ZF_NFC_STATUS_PROCESSING},
+@@ -666,7 +666,7 @@ static NfcCommand zf_transport_nfc_handle_iso4_payload_locked(
+ 
+     if (request_chained) {
+         ZfNfcRxChainAppendResult append_result = zf_transport_nfc_append_rx_chain_payload_locked(
+-            app, state, request_pcb, payload, payload_len);
++            state, request_pcb, payload, payload_len);
+ 
+         if (append_result == ZfNfcRxChainAppendDuplicate) {
+             const uint8_t duplicate_count = state->rx_chain_duplicate_count;
+@@ -715,11 +715,11 @@ static NfcCommand zf_transport_nfc_handle_iso4_payload_locked(
+         return NfcCommandContinue;
+     }
+ 
+-    if (state->command_chain_active) {
++    if (state->iso4_rx_chain_active) {
+         const uint8_t *assembled_frame = NULL;
+         size_t assembled_len = 0U;
+-        if (state->request_len > ZF_MAX_MSG_SIZE ||
+-            payload_len > ZF_MAX_MSG_SIZE - state->request_len) {
++        if (state->iso4_rx_chain_len > ZF_MAX_MSG_SIZE ||
++            payload_len > ZF_MAX_MSG_SIZE - state->iso4_rx_chain_len) {
+             zf_transport_nfc_reset_exchange_locked(state);
+             furi_mutex_release(app->ui_mutex);
+             zf_transport_nfc_send_status_word(state, ZF_NFC_SW_WRONG_LENGTH);
+@@ -727,13 +727,13 @@ static NfcCommand zf_transport_nfc_handle_iso4_payload_locked(
+         }
+ 
+         if (payload_len > 0U) {
+-            memcpy(&app->transport_arena[state->request_len], payload, payload_len);
++            memcpy(&state->iso4_rx_chain_data[state->iso4_rx_chain_len], payload, payload_len);
+         }
+-        state->request_len += payload_len;
+-        assembled_frame = app->transport_arena;
+-        assembled_len = state->request_len;
+-        state->command_chain_active = false;
+-        state->request_len = 0U;
++        state->iso4_rx_chain_len += payload_len;
++        assembled_frame = state->iso4_rx_chain_data;
++        assembled_len = state->iso4_rx_chain_len;
++        state->iso4_rx_chain_active = false;
++        state->iso4_rx_chain_len = 0U;
+         state->rx_chain_last_valid = false;
+         state->rx_chain_last_pcb = 0U;
+         state->rx_chain_duplicate_count = 0U;
+@@ -747,6 +747,7 @@ static NfcCommand zf_transport_nfc_handle_iso4_payload_locked(
+                                                               payload_len);
+         }
+         zf_transport_nfc_trace_apdu_after_response(assembled_frame, assembled_len);
++        zf_crypto_secure_zero(state->iso4_rx_chain_data, assembled_len);
+         furi_mutex_release(app->ui_mutex);
+         zf_transport_nfc_trace_event("NFC I-block done");
+         return NfcCommandContinue;
+diff --git a/applications/external/zerofido/src/transport/nfc_session.c b/applications/external/zerofido/src/transport/nfc_session.c
+index 1837b252..161b6c2a 100644
+--- a/applications/external/zerofido/src/transport/nfc_session.c
++++ b/applications/external/zerofido/src/transport/nfc_session.c
+@@ -105,6 +105,9 @@ static void zf_transport_nfc_reset_exchange_internal_locked(ZfNfcTransportState
+     state->response_is_u2f = false;
+     state->response_is_error = false;
+     state->command_chain_active = false;
++    state->iso4_rx_chain_active = false;
++    zf_crypto_secure_zero(state->iso4_rx_chain_data, state->iso4_rx_chain_len);
++    state->iso4_rx_chain_len = 0;
+     state->ctap_get_response_supported = false;
+     zf_transport_nfc_clear_tx_chain(state);
+     state->request_len = 0;
+diff --git a/applications/external/zerofido/src/transport/nfc_worker.h b/applications/external/zerofido/src/transport/nfc_worker.h
+index ebee1212..4c7cca31 100644
+--- a/applications/external/zerofido/src/transport/nfc_worker.h
++++ b/applications/external/zerofido/src/transport/nfc_worker.h
+@@ -92,6 +92,7 @@ typedef struct {
+     bool response_is_u2f;
+     bool response_is_error;
+     bool command_chain_active;
++    bool iso4_rx_chain_active;
+     bool ctap_get_response_supported;
+     bool iso4_last_tx_valid;
+     bool iso4_tx_chain_active;
+@@ -106,6 +107,8 @@ typedef struct {
+     bool rx_complete_last_response_preserves_replay;
+     uint8_t iso4_tx_frame[ZF_NFC_TX_FRAME_CAPACITY];
+     uint8_t iso4_last_tx[ZF_NFC_LAST_TX_CAPACITY];
++    /* ISO-DEP collects raw APDU bytes while CTAP collects command data in the arena. */
++    uint8_t iso4_rx_chain_data[ZF_MAX_MSG_SIZE];
+     uint8_t rx_complete_last_payload[ZF_NFC_MAX_RX_FRAME_INF_SIZE];
+     uint8_t rx_complete_last_response[ZF_NFC_LAST_TX_CAPACITY];
+     const uint8_t *iso4_tx_chain_data;
+@@ -120,6 +123,7 @@ typedef struct {
+     size_t iso4_last_tx_len;
+     size_t iso4_tx_chain_len;
+     size_t iso4_tx_chain_offset;
++    size_t iso4_rx_chain_len;
+     size_t rx_chain_last_offset;
+     size_t rx_chain_last_len;
+     size_t rx_complete_last_len;

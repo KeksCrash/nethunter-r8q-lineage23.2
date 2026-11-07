@@ -15,12 +15,27 @@ final class CtapFido {
  static long num(Object o,String field)throws Failure{if(!(o instanceof Number))throw new Failure(field+" MISSING");return ((Number)o).longValue();}
  static String b64(byte[] b){return Base64.encodeToString(b,Base64.NO_WRAP);}static byte[] un64(String b){return Base64.decode(b,Base64.NO_WRAP);}
  static final class Session implements AutoCloseable{
-  final IsoDep iso; Session(Tag t)throws Exception{iso=IsoDep.get(t);if(iso==null)throw new Failure("KEIN_ISODEP: ZeroFIDO NFC statt Kartenemulation verwenden");iso.connect();iso.setTimeout(20000);byte[] aid={ (byte)0xa0,0,0,0x06,0x47,0x2f,0,1};apdu(join(new byte[]{0,(byte)0xa4,4,0,8},aid,new byte[]{0}));}
+  private static final java.util.Set<Session> ACTIVE=java.util.concurrent.ConcurrentHashMap.newKeySet();
+  final IsoDep iso;final Tag tag;private volatile boolean cancelled;private int timeoutMs;
+  Session(Tag t)throws Exception{tag=t;iso=IsoDep.get(t);if(iso==null)throw new Failure("KEIN_ISODEP: ZeroFIDO NFC statt Kartenemulation verwenden");ACTIVE.add(this);
+   try{checkCancelled();iso.connect();timeoutMs=NfcTiming.apduTimeout(iso.getTimeout());iso.setTimeout(timeoutMs);byte[] aid={ (byte)0xa0,0,0,0x06,0x47,0x2f,0,1};apdu(join(new byte[]{0,(byte)0xa4,4,0,8},aid,new byte[]{0}));}
+   catch(Exception e){close();throw e;}
+  }
+  static void cancelTag(Tag tag){if(tag==null)return;for(Session s:ACTIVE)if(s.tag==tag){s.cancelled=true;Thread closer=new Thread(s::close,"KaliLock-CancelTag");closer.setDaemon(true);closer.start();}}
+  private void checkCancelled()throws IOException{if(cancelled||Thread.currentThread().isInterrupted())throw new IOException("NFC_CANCELLED");}
+  private byte[] transceive(byte[] data)throws IOException{
+   checkCancelled();long begin=android.os.SystemClock.elapsedRealtime();
+   try{byte[] reply=iso.transceive(data);checkCancelled();return reply;}
+   catch(android.nfc.TagLostException original){
+    android.nfc.TagLostException detail=new android.nfc.TagLostException("NFC_TAG_LOST elapsedMs="+(android.os.SystemClock.elapsedRealtime()-begin)+" timeoutMs="+timeoutMs+" cancelled="+cancelled);
+    detail.initCause(original);throw detail;
+   }
+  }
   // CTAP2-NFC 0x9100 means "still processing" or "user presence needed", not a failed APDU.
   // Keep polling on the same NFC tag without silently truncating the registration.
-  byte[] apdu(byte[] data)throws Exception{return apdu(data,null);}
-  byte[] apdu(byte[] data,Event event)throws Exception{
-   byte[] reply=iso.transceive(data);ByteArrayOutputStream out=new ByteArrayOutputStream();
+  byte[] apdu(byte[] data)throws Exception{return apdu(data,null,(byte)0);}
+  private byte[] apdu(byte[] data,Event event,byte getResponseCla)throws Exception{
+   byte[] reply=transceive(data);ByteArrayOutputStream out=new ByteArrayOutputStream();
    long started=android.os.SystemClock.elapsedRealtime(),lastNotice=0;
    int keepalives=0,chains=0;
    for(int i=0;i<1200;i++){
@@ -34,13 +49,13 @@ final class CtapFido {
       event.log("FIDO_WARTET: "+(reason==2?"BENUTZERBESTAETIGUNG_NOETIG":"FLIPPER_VERARBEITET")+" keepalives="+keepalives+" sek="+((now-started)/1000));lastNotice=now;
      }
      if(now-started>90000)throw new Failure("FIDO_TIMEOUT_90S: Keine fertige Antwort, Flipper NFC-Modus/Bestätigung prüfen; keepalives="+keepalives);
-     reply=iso.transceive(new byte[]{(byte)0x80,0x11,0,0,0});
+     reply=transceive(new byte[]{(byte)0x80,0x11,0,0,0});
      continue;
     }
     out.write(reply,0,reply.length-2);
     if((sw&0xff00)==0x6100){
      if(++chains>256||out.size()>65536)throw new Failure("ISO7816_RESPONSE_TOO_LARGE");
-     reply=iso.transceive(new byte[]{0,(byte)0xc0,0,0,(byte)(sw&255)});continue;
+     reply=transceive(new byte[]{getResponseCla,(byte)0xc0,0,0,(byte)(sw&255)});continue;
     }
     if(sw!=0x9000)throw new Failure(String.format(Locale.ROOT,"ISO7816_%04X",sw));
     if(event!=null&&keepalives>0)event.log("FIDO_ANTWORT_OK keepalives="+keepalives+" bytes="+out.size());
@@ -50,17 +65,54 @@ final class CtapFido {
   }
 
   Map<?,?> cmd(int command,Map<Object,Object> params)throws Exception{return cmd(command,params,null);}
-  Map<?,?> cmd(int command,Map<Object,Object> params,Event event)throws Exception{byte[] b=join(new byte[]{(byte)command},params==null?new byte[0]:MiniCbor.encode(params));byte[] data=join(new byte[]{(byte)0x80,0x10,(byte)0x80,0,0,(byte)(b.length>>8),(byte)b.length},b,new byte[]{0,0});byte[] r=apdu(data,event);if(r.length==0)throw new Failure("CTAP_NO_REPLY");int status=r[0]&255;if(status!=0)throw new Failure(String.format(Locale.ROOT,"CTAP2_STATUS_0x%02X",status));return r.length==1?m():map(MiniCbor.decode(sub(r,1,r.length)),"CTAP response");}
-  public void close(){try{iso.close();}catch(Exception ignored){}}
+  Map<?,?> cmd(int command,Map<Object,Object> params,Event event)throws Exception{
+   byte[] payload=join(new byte[]{(byte)command},params==null?new byte[0]:MiniCbor.encode(params));
+   List<byte[]> frames=NfcApdu.ctapMessages(payload);
+   boolean chained=frames.size()>1;
+   if(event!=null&&chained)event.log("NFC_APDU_CHAIN frames="+frames.size()+" payloadBytes="+payload.length);
+   for(int i=0;i<frames.size()-1;i++){
+    byte[] reply=transceiveFrame(frames.get(i),i,frames.size(),event);
+    if(!Arrays.equals(reply,new byte[]{(byte)0x90,0}))throw new Failure(frameLabel(i,frames.size(),frames.get(i))+" expected 9000, received "+statusLabel(reply));
+   }
+   int last=frames.size()-1;
+   byte[] frame=frames.get(last),response;
+   try{
+    response=apdu(frame,event,(byte)(chained?0x80:0));
+   }catch(IOException e){
+    if(event!=null)event.log(frameLabel(last,frames.size(),frame)+" "+e.getMessage());
+    throw e;
+   }catch(Failure e){
+    throw new Failure(frameLabel(last,frames.size(),frame)+" "+e.getMessage());
+   }
+   if(response.length==0)throw new Failure("CTAP_NO_REPLY");
+   int status=response[0]&255;
+   if(status!=0)throw new Failure(String.format(Locale.ROOT,"CTAP2_STATUS_0x%02X",status));
+   return response.length==1?m():map(MiniCbor.decode(sub(response,1,response.length)),"CTAP response");
+  }
+  private byte[] transceiveFrame(byte[] frame,int index,int count,Event event)throws IOException{
+   try{return transceive(frame);}
+   catch(IOException e){
+    if(event!=null)event.log(frameLabel(index,count,frame)+" "+e.getMessage());
+    throw e;
+   }
+  }
+  private static String frameLabel(int index,int count,byte[] frame){
+   return "NFC_FRAME_"+(index+1)+"_OF_"+count+" bytes="+frame.length;
+  }
+  private static String statusLabel(byte[] reply){
+   if(reply.length<2)return "APDU_SHORT";
+   return String.format(Locale.ROOT,"ISO7816_%02X%02X",reply[reply.length-2]&255,reply[reply.length-1]&255);
+  }
+  public void close(){ACTIVE.remove(this);try{iso.close();}catch(Exception ignored){}}
  }
- static Map<?,?> info(Tag tag,Event event)throws Exception{try(Session s=new Session(tag)){Map<?,?> info=s.cmd(4,null);event.log("CTAP_INFO versions="+MiniCbor.key(info,1)+" options="+MiniCbor.key(info,4)+" pinProtocols="+MiniCbor.key(info,6));return info;}}
+ static Map<?,?> info(Tag tag,Event event)throws Exception{try(Session s=new Session(tag)){Map<?,?> info=s.cmd(4,null);event.log("CTAP_INFO versions="+MiniCbor.key(info,1)+" extensions="+MiniCbor.key(info,2)+" options="+MiniCbor.key(info,4)+" pinProtocols="+MiniCbor.key(info,6));Object ext=MiniCbor.key(info,2);boolean hmac=ext instanceof java.util.List && ((java.util.List<?>)ext).contains("hmac-secret");event.log("DIRECT_BOOT_HMAC_SECRET_ADVERTISED="+hmac+" (capability only; hardware unlock test still required)");return info;}}
  static String pinStatus(Tag tag,Event event)throws Exception{try(Session s=new Session(tag)){Map<?,?> info=s.cmd(4,null);Map<?,?> opts=map(MiniCbor.key(info,4),"options");Object state=opts.get("clientPin");String result=Boolean.TRUE.equals(state)?"GESETZT":Boolean.FALSE.equals(state)?"NICHT_GESETZT":"UNBEKANNT";event.log("ZEROFIDO_PIN_STATUS="+result+" versions="+MiniCbor.key(info,1)+" protocols="+MiniCbor.key(info,6));try{Map<?,?> p=s.cmd(6,m(1,1,2,1));event.log("PIN_RETRIES="+MiniCbor.key(p,3));}catch(Exception ex){event.log("PIN_RETRIES_UNAVAILABLE="+ex.getMessage());}return result;}}
  static final class Pins {
   final byte[] secret;final Map<Object,Object> client;Pins(byte[] s,Map<Object,Object> c){secret=s;client=c;}
   static byte[] fixed(BigInteger n){byte[] a=n.toByteArray(),o=new byte[32];int shift=a.length==33?1:0;System.arraycopy(a,shift,o,32-(a.length-shift),a.length-shift);return o;}
   static byte[] hmac(byte[] k,byte[] p)throws Exception{Mac mac=Mac.getInstance("HmacSHA256");mac.init(new SecretKeySpec(k,"HmacSHA256"));return mac.doFinal(p);}
   static byte[] aes(int mode,byte[] key,byte[] val)throws Exception{Cipher c=Cipher.getInstance("AES/CBC/NoPadding");c.init(mode,new SecretKeySpec(key,"AES"),new IvParameterSpec(new byte[16]));return c.doFinal(val);}
-  static Pins agree(Session s)throws Exception{Map<?,?> resp=s.cmd(6,m(1,1,2,2));Map<?,?> peer=map(MiniCbor.key(resp,1),"keyAgreement");byte[] x=bytes(MiniCbor.key(peer,-2),"x"),y=bytes(MiniCbor.key(peer,-3),"y");KeyPairGenerator g=KeyPairGenerator.getInstance("EC");g.initialize(new ECGenParameterSpec("secp256r1"));KeyPair kp=g.generateKeyPair();ECPublicKey pub=(ECPublicKey)kp.getPublic();PublicKey other=KeyFactory.getInstance("EC").generatePublic(new ECPublicKeySpec(new ECPoint(new BigInteger(1,x),new BigInteger(1,y)),pub.getParams()));KeyAgreement a=KeyAgreement.getInstance("ECDH");a.init(kp.getPrivate());a.doPhase(other,true);return new Pins(sha(a.generateSecret()),m(1,2,3,-25,-1,1,-2,fixed(pub.getW().getAffineX()),-3,fixed(pub.getW().getAffineY())));}
+  static Pins agree(Session s)throws Exception{Map<?,?> resp=s.cmd(6,m(1,1,2,2));Map<?,?> peer=map(MiniCbor.key(resp,1),"keyAgreement");if(num(MiniCbor.key(peer,1),"kty")!=2||num(MiniCbor.key(peer,3),"alg")!=-25||num(MiniCbor.key(peer,-1),"crv")!=1)throw new Failure("INVALID_KEY_AGREEMENT_COSE");byte[] x=bytes(MiniCbor.key(peer,-2),"x"),y=bytes(MiniCbor.key(peer,-3),"y");if(x.length!=32||y.length!=32)throw new Failure("INVALID_KEY_AGREEMENT_COORDINATES");KeyPairGenerator g=KeyPairGenerator.getInstance("EC");g.initialize(new ECGenParameterSpec("secp256r1"));KeyPair kp=g.generateKeyPair();ECPublicKey pub=(ECPublicKey)kp.getPublic();PublicKey other=KeyFactory.getInstance("EC").generatePublic(new ECPublicKeySpec(new ECPoint(new BigInteger(1,x),new BigInteger(1,y)),pub.getParams()));KeyAgreement a=KeyAgreement.getInstance("ECDH");a.init(kp.getPrivate());a.doPhase(other,true);return new Pins(sha(a.generateSecret()),m(1,2,3,-25,-1,1,-2,fixed(pub.getW().getAffineX()),-3,fixed(pub.getW().getAffineY())));}
   static byte[] token(Session s,String pin,boolean version21,String rpId,Event event)throws Exception{
     Pins p=agree(s);byte[] hash=sha(pin.getBytes(StandardCharsets.UTF_8)),encrypted=aes(Cipher.ENCRYPT_MODE,p.secret,Arrays.copyOf(hash,16));Arrays.fill(hash,(byte)0);
     Map<Object,Object> args=version21?m(1,1,2,9,3,p.client,6,encrypted,9,1,10,rpId):m(1,1,2,5,3,p.client,6,encrypted);
@@ -117,7 +169,7 @@ final class CtapFido {
     if(auth.length<37||!MessageDigest.isEqual(sub(auth,0,32),sha(enrolledRpId.getBytes(StandardCharsets.UTF_8)))||(auth[32]&1)==0)throw new Failure("ASSERTION_INVALID_AUTHDATA");
     Object desc=MiniCbor.key(result,1);if(desc instanceof Map){byte[] echoed=bytes(((Map<?,?>)desc).get("id"),"credentialId");if(!MessageDigest.isEqual(echoed,cred))throw new Failure("CREDENTIAL_MISMATCH");}
     Signature verifier=Signature.getInstance("SHA256withECDSA");verifier.initVerify(pub(x,y));verifier.update(join(auth,challenge));if(!verifier.verify(signature))throw new Failure("ES256_SIGNATURE_INVALID");
-    long counter=((long)(auth[33]&255)<<24)|((long)(auth[34]&255)<<16)|((long)(auth[35]&255)<<8)|(auth[36]&255);if(p.getBoolean("verified",false)&&counter!=0&&counter<=p.getLong("counter",0))throw new Failure("SIGN_COUNTER_ROLLBACK");
+    long counter=((long)(auth[33]&255)<<24)|((long)(auth[34]&255)<<16)|((long)(auth[35]&255)<<8)|(auth[36]&255);if(p.getBoolean("verified",false)&&(counter!=0||p.getLong("counter",0)!=0)&&counter<=p.getLong("counter",0))throw new Failure("SIGN_COUNTER_ROLLBACK");
     p.edit().putBoolean("verified",true).putLong("counter",counter).apply();event.log("FIDO_SIGNATUR_GUELTIG counter="+counter);
   }
  }

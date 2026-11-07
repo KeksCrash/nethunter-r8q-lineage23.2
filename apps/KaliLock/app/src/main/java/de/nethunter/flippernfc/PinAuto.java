@@ -11,39 +11,48 @@ import javax.crypto.spec.*;
 /** Optional and experimental: locally stored Android password, cryptographically gated by CTAP2 assertion. */
 final class PinAuto {
  private static final String PREF="pin_automation_v14",ALIAS="flipper_unified_pin_v14";
- static boolean enabled(Context c){return c.getSharedPreferences(PREF,0).getBoolean("enabled",false);}
- static boolean configured(Context c){return c.getSharedPreferences(PREF,0).contains("ciphertext");}
+ static boolean enabled(Context c){if(!DirectBootUnlock.userUnlocked(c))return false;return c.getSharedPreferences(PREF,0).getBoolean("enabled",false);}
+ static boolean configured(Context c){if(!DirectBootUnlock.userUnlocked(c))return false;return c.getSharedPreferences(PREF,0).contains("ciphertext");}
  static void save(Context c,String pin)throws Exception{
   if(pin==null || pin.isEmpty() || pin.codePointCount(0,pin.length())>256)throw new IllegalArgumentException("Passwort muss 1–256 Zeichen lang sein");
+  DirectBootUnlock.passwordChanged(c);
   KeyStore ks=KeyStore.getInstance("AndroidKeyStore");ks.load(null);if(!ks.containsAlias(ALIAS)){
    KeyGenerator kg=KeyGenerator.getInstance("AES","AndroidKeyStore");kg.init(new KeyGenParameterSpec.Builder(ALIAS,KeyProperties.PURPOSE_ENCRYPT|KeyProperties.PURPOSE_DECRYPT).setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).setRandomizedEncryptionRequired(true).build());kg.generateKey();}
   SecretKey key=(SecretKey)ks.getKey(ALIAS,null);Cipher cipher=Cipher.getInstance("AES/GCM/NoPadding");cipher.init(Cipher.ENCRYPT_MODE,key);byte[] ct=cipher.doFinal(pin.getBytes(java.nio.charset.StandardCharsets.UTF_8));
   c.getSharedPreferences(PREF,0).edit().putString("nonce",Base64.encodeToString(cipher.getIV(),Base64.NO_WRAP)).putString("ciphertext",Base64.encodeToString(ct,Base64.NO_WRAP)).putBoolean("enabled",false).commit();
  }
- static void toggle(Context c,boolean on){if(on&&!configured(c))throw new IllegalStateException("Android-PIN noch nicht gespeichert");c.getSharedPreferences(PREF,0).edit().putBoolean("enabled",on).commit();}
- static void clear(Context c){c.getSharedPreferences(PREF,0).edit().clear().commit();try{KeyStore k=KeyStore.getInstance("AndroidKeyStore");k.load(null);k.deleteEntry(ALIAS);}catch(Exception ignored){}}
+ static void toggle(Context c,boolean on){if(!on)DirectBootUnlock.disable(c);if(on&&!configured(c))throw new IllegalStateException("Android-PIN noch nicht gespeichert");c.getSharedPreferences(PREF,0).edit().putBoolean("enabled",on).commit();}
+ static void clear(Context c){DirectBootUnlock.passwordChanged(c);c.getSharedPreferences(PREF,0).edit().clear().commit();try{KeyStore k=KeyStore.getInstance("AndroidKeyStore");k.load(null);k.deleteEntry(ALIAS);}catch(Exception ignored){}}
  private static String previousIme;
  private static final android.os.Handler restoreHandler=new android.os.Handler(android.os.Looper.getMainLooper());
  private static final String IME="de.nethunter.flipperunified/de.nethunter.flippernfc.LockPasswordIme";
  private static String currentIme(Context c){return android.provider.Settings.Secure.getString(c.getContentResolver(),android.provider.Settings.Secure.DEFAULT_INPUT_METHOD);}
  static synchronized void restoreIme(Context c){
+  cancelPendingImePassword();
   if(previousIme!=null){
-   try{if(IME.equals(currentIme(c))){switchIme(previousIme);NfcWatchService.log(c,"IME_RESTORED");}}catch(Exception e){NfcWatchService.log(c,"IME_RESTORE_FAILED "+e.getClass().getSimpleName());}
+   try{if(imeSelected(c)){switchIme(previousIme);NfcWatchService.log(c,"IME_RESTORED");}DirectBootUnlock.device(c).getSharedPreferences("ime_recovery",0).edit().remove("previous").commit();}catch(Exception e){NfcWatchService.log(c,"IME_RESTORE_FAILED "+e.getClass().getSimpleName());}
    previousIme=null;
   }
+ }
+ static synchronized void recoverIme(Context c){
+  if(hasPendingImePassword())return;
+  String saved=DirectBootUnlock.device(c).getSharedPreferences("ime_recovery",0).getString("previous",null);
+  if(saved!=null&&!IME.equals(saved)){previousIme=saved;restoreIme(c);}
  }
  private static void switchIme(String component){
   if(component==null || !component.matches("[A-Za-z0-9._$]+/[A-Za-z0-9._$]+"))throw new IllegalArgumentException("INVALID_IME_COMPONENT");
   try{java.lang.Process process=new ProcessBuilder("su","-c","ime set "+component).redirectErrorStream(true).start();
-   if(process.waitFor()!=0)throw new IllegalStateException("IME_SET_FAILED");}
+   if(!process.waitFor(7,java.util.concurrent.TimeUnit.SECONDS)){process.destroyForcibly();throw new IllegalStateException("IME_SET_TIMEOUT");}
+   if(process.exitValue()!=0)throw new IllegalStateException("IME_SET_FAILED");}
   catch(InterruptedException e){Thread.currentThread().interrupt();throw new IllegalStateException("IME_SWITCH_INTERRUPTED",e);}
   catch(java.io.IOException e){throw new IllegalStateException("IME_SWITCH_IO",e);}
  }
  private static synchronized void selectImeAfterFido(Context c){
-  if(IME.equals(currentIme(c)))return;
+  if(imeSelected(c))return;
   previousIme=currentIme(c);
   if(previousIme==null)throw new IllegalStateException("CURRENT_IME_UNKNOWN");
-  switchIme(IME);
+  if(!DirectBootUnlock.device(c).getSharedPreferences("ime_recovery",0).edit().putString("previous",previousIme).commit())throw new IllegalStateException("IME_RECOVERY_STORE_FAILED");
+  try{switchIme(IME);}catch(RuntimeException e){restoreIme(c);throw e;}
   NfcWatchService.log(c,"IME_SWITCH_REQUESTED_AFTER_FIDO");
   restoreHandler.postDelayed(()->restoreIme(c.getApplicationContext()),14000);
  }
@@ -79,23 +88,43 @@ final class PinAuto {
   runRootInput("input swipe "+x+" "+from+" "+x+" "+to+" 270");
   NfcWatchService.log(c,"LOCK_BOUNCER_SWIPE_REQUESTED (editor not yet confirmed)");
  }
+ static synchronized boolean deliveryStillValid(){return pendingTransaction!=null&&pendingTransaction.valid();}
  private static String pendingImePassword;
+ private static UnlockTransaction pendingTransaction;
  private static long pendingImeUntil;
- static synchronized boolean hasPendingImePassword(){return pendingImePassword!=null && android.os.SystemClock.elapsedRealtime()<=pendingImeUntil;}
+ static synchronized boolean hasPendingImePassword(){return pendingImePassword!=null && pendingTransaction!=null && pendingTransaction.valid() && android.os.SystemClock.elapsedRealtime()<=pendingImeUntil;}
  static synchronized String takePendingImePassword(){
-  if(pendingImePassword==null || android.os.SystemClock.elapsedRealtime()>pendingImeUntil){pendingImePassword=null;return null;}
+  if(!hasPendingImePassword()){pendingImePassword=null;return null;}
   String value=pendingImePassword;pendingImePassword=null;return value;
  }
- static synchronized void cancelPendingImePassword(){pendingImePassword=null;}
- private static synchronized void queueImePassword(String value){pendingImePassword=value;pendingImeUntil=android.os.SystemClock.elapsedRealtime()+15000;}
- private static boolean imeSelected(Context c){return IME.equals(currentIme(c));}
+ static synchronized void cancelPendingImePassword(){pendingImePassword=null;pendingTransaction=null;}
+ private static synchronized void queueImePassword(String value){UnlockTransaction t=UnlockTransaction.current();t.authorizeDelivery();pendingTransaction=t;pendingImePassword=value;pendingImeUntil=android.os.SystemClock.elapsedRealtime()+15000;}
+ static boolean imeSelected(Context c){
+  // Direct Boot keeps IME selection in system-server memory until user unlock.
+  if(Build.VERSION.SDK_INT>=34){
+   android.view.inputmethod.InputMethodManager manager=c.getSystemService(android.view.inputmethod.InputMethodManager.class);
+   android.view.inputmethod.InputMethodInfo selected=manager==null?null:manager.getCurrentInputMethodInfo();
+   return selected!=null&&IME.equals(selected.getId());
+  }
+  return IME.equals(currentIme(c));
+ }
  static boolean unlockAfterValidatedAssertion(Context c)throws Exception {
   if(!enabled(c)||!CtapFido.verified(c))return false;
   KeyguardManager km=(KeyguardManager)c.getSystemService(Context.KEYGUARD_SERVICE);if(km==null||!km.isDeviceLocked())return false;
+  byte[] bytes=readPasswordBytes(c);
+  try{return submitValidatedPassword(c,new String(bytes,java.nio.charset.StandardCharsets.UTF_8));}
+  finally{java.util.Arrays.fill(bytes,(byte)0);}
+ }
+ static void prepareBootIme()throws Exception {runRootInput("ime enable "+IME);}
+ static byte[] readPasswordBytes(Context c)throws Exception {
+  if(!DirectBootUnlock.userUnlocked(c)||!configured(c))throw new IllegalStateException("PASSWORD_STORAGE_LOCKED_OR_MISSING");
   android.content.SharedPreferences p=c.getSharedPreferences(PREF,0);KeyStore ks=KeyStore.getInstance("AndroidKeyStore");ks.load(null);
   SecretKey key=(SecretKey)ks.getKey(ALIAS,null);if(key==null)throw new IllegalStateException("Keystore-Schlüssel fehlt");
   Cipher aes=Cipher.getInstance("AES/GCM/NoPadding");aes.init(Cipher.DECRYPT_MODE,key,new GCMParameterSpec(128,Base64.decode(p.getString("nonce",""),Base64.NO_WRAP)));
-  byte[] pinBytes=aes.doFinal(Base64.decode(p.getString("ciphertext",""),Base64.NO_WRAP));String pin=new String(pinBytes,java.nio.charset.StandardCharsets.UTF_8);java.util.Arrays.fill(pinBytes,(byte)0);
+  return aes.doFinal(Base64.decode(p.getString("ciphertext",""),Base64.NO_WRAP));
+ }
+ static boolean submitValidatedPassword(Context c,String pin)throws Exception {
+  UnlockTransaction transaction=UnlockTransaction.current();transaction.check();
   // A verified CTAP2 assertion is mandatory. No password goes to a shell.
   // Keep CPU awake while the display transitions from doze to interactive.
   PowerManager pm=(PowerManager)c.getSystemService(Context.POWER_SERVICE);
@@ -103,11 +132,11 @@ final class PinAuto {
   PowerManager.WakeLock cpu=pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"KaliLock:NfcUnlockTransition");
   cpu.acquire(12000);
   try {
-   wakeScreenAndWait(c);
+   transaction.check();wakeScreenAndWait(c);transaction.check();
    KeyguardManager guard=(KeyguardManager)c.getSystemService(Context.KEYGUARD_SERVICE);
    if(guard==null||!guard.isDeviceLocked()){NfcWatchService.log(c,"LOCK_ALREADY_UNLOCKED_AFTER_WAKE");return false;}
    // Select the trusted IME while no password is queued, then show the OS bouncer.
-   if(!imeSelected(c))selectImeAfterFido(c);
+   transaction.check();if(!imeSelected(c))selectImeAfterFido(c);transaction.check();
    queueImePassword(pin);
    NfcWatchService.log(c,"LOCK_PASSWORD_QUEUED_15S_AFTER_FIDO_AND_WAKE");
    try {showCredentialBouncer(c);} catch(Exception ex){cancelPendingImePassword();restoreIme(c);throw ex;}
@@ -122,7 +151,8 @@ final class PinAuto {
      },"KaliLock-BouncerRetry").start();
     }
    },2500);
-  } finally {if(cpu.isHeld())cpu.release();}
+  } catch(Exception e){cancelPendingImePassword();restoreIme(c);throw e;}
+  finally {if(cpu.isHeld())cpu.release();}
   return true;
  }
 }

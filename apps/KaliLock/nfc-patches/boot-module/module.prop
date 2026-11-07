@@ -1,0 +1,6 @@
+id=kalilock-nfc-boot
+name=Kari Nethunter NFC boot recovery
+version=1.0
+versionCode=1
+author=local
+description=Restores the existing NFC screen-off hooks on device after boot and NFC-process restart.
