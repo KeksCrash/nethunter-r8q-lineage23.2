@@ -1,0 +1,21 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="de.local.meddl" android:versionCode="6" android:versionName="1.5">
+    <uses-sdk android:minSdkVersion="36" android:targetSdkVersion="36"/>
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+    <application android:label="Meddl-Soundboard" android:theme="@android:style/Theme.Material.NoActionBar"
+        android:icon="@mipmap/ic_launcher" android:allowBackup="false" android:usesCleartextTraffic="false">
+        <activity android:name=".BoardActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <receiver android:name=".ProvisionReceiver" android:exported="true" android:permission="android.permission.DUMP"/>
+        <service android:name=".FloatingBoard" android:exported="false" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Vom Nutzer gestartete schwebende Soundboard-Steuerung für lokale Audiobrücke"/>
+        </service>
+    </application>
+</manifest>
