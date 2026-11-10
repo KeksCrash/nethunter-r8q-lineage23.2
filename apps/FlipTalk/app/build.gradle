@@ -1,0 +1,5 @@
+plugins { id 'com.android.application'; id 'com.chaquo.python' }
+android { namespace 'de.fliptalk.app'; compileSdk 35
+    defaultConfig { applicationId 'de.fliptalk.app'; minSdk 26; targetSdk 32; versionCode 1; versionName '0.1-alpha'; ndk { abiFilters 'arm64-v8a' } }
+}
+chaquopy { defaultConfig { pip { install 'TikTokLive==6.4.5.post1' } } }
