@@ -1,0 +1,2 @@
+package de.nethunter.smartunlock;import android.appwidget.AppWidgetManager;import android.appwidget.AppWidgetProvider;import android.content.Context;import android.content.Intent;
+public class LargeWidget extends AppWidgetProvider { @Override public void onUpdate(Context c,AppWidgetManager m,int[] ids){Widget.refresh(c);} @Override public void onReceive(Context c,Intent i){super.onReceive(c,i);if(Widget.ACTION.equals(i.getAction()))Widget.toggle(c);else if(Widget.REFRESH.equals(i.getAction()))Widget.refresh(c);} }

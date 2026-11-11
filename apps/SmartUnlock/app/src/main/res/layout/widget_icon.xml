@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/icon_root"
+    android:background="@drawable/neon_icon_off"
+    android:padding="3dp"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+    <LinearLayout
+        android:gravity="center"
+        android:orientation="vertical"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+        <TextView
+            android:textSize="27sp"
+            android:textColor="#f3bac4"
+            android:gravity="center"
+            android:id="@+id/icon_glyph"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="��"/>
+        <TextView
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:textColor="#f3bac4"
+            android:id="@+id/icon_caption"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="AUS"/>
+    </LinearLayout>
+</FrameLayout>

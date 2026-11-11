@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <application
+        android:theme="@android:style/Theme.Material.NoActionBar"
+        android:label="@string/app_name"
+        android:icon="@drawable/icon"
+        android:debuggable="true"
+        android:extractNativeLibs="false"
+        android:usesCleartextTraffic="false">
+        <activity
+            android:name="de.nethunter.smartunlock.MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <receiver
+            android:name="de.nethunter.smartunlock.Widget"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+                <action android:name="de.nethunter.smartunlock.TOGGLE"/>
+                <action android:name="de.nethunter.smartunlock.REFRESH"/>
+                <action android:name="lineageos.platform.intent.action.PROFILE_SELECTED"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_small"/>
+        </receiver>
+        <receiver
+            android:name="de.nethunter.smartunlock.LargeWidget"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+                <action android:name="de.nethunter.smartunlock.TOGGLE"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_large"/>
+        </receiver>
+        <receiver
+            android:name="de.nethunter.smartunlock.IconWidget"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE"/>
+                <action android:name="de.nethunter.smartunlock.TOGGLE"/>
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_icon"/>
+        </receiver>
+        <receiver android:name="de.nethunter.smartunlock.BootReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.USER_PRESENT"/>
+            </intent-filter>
+        </receiver>
+        <service android:name="de.nethunter.smartunlock.TrustMonitor" android:exported="false" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="User-enabled LineageOS trust status monitor"/>
+        </service>
+    </application>
+</manifest>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Smart Unlock Neon</string>
+    <string name="icon_widget">Smart Unlock · 1×1-Schalter</string>
+    <string name="large_widget">Smart Unlock – Groß</string>
+    <string name="small_widget">Smart Unlock – Kompakt</string>
+</resources>

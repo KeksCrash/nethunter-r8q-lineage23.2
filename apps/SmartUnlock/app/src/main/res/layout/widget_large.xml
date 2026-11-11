@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical"
+    android:background="@drawable/neon_panel"
+    android:padding="17dp"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+    <TextView
+        android:textSize="13sp"
+        android:textStyle="bold"
+        android:textColor="#ff536c"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="◆  NETHUNTER  /  SMART UNLOCK"/>
+    <LinearLayout
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+        <ImageView
+            android:layout_width="72dp"
+            android:layout_height="72dp"
+            android:src="@drawable/icon"
+            android:contentDescription="Neonroter Drache"/>
+        <LinearLayout
+            android:orientation="vertical"
+            android:paddingLeft="12dp"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1">
+            <TextView
+                android:textSize="23sp"
+                android:textStyle="bold"
+                android:textColor="#ff536c"
+                android:id="@+id/widget_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="PRÜFE…"/>
+            <TextView
+                android:textSize="13sp"
+                android:textColor="#d9cbd2"
+                android:id="@+id/widget_detail"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Status wird geladen"/>
+        </LinearLayout>
+        <TextView
+            android:textSize="22sp"
+            android:textColor="#ff536c"
+            android:id="@+id/widget_symbol"
+            android:layout_width="26dp"
+            android:layout_height="wrap_content"
+            android:text="○"/>
+    </LinearLayout>
+    <TextView
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:textColor="#ffffff"
+        android:gravity="center"
+        android:id="@+id/widget_button"
+        android:background="@drawable/neon_button"
+        android:layout_width="match_parent"
+        android:layout_height="42dp"
+        android:text="UMSCHALTEN"/>
+</LinearLayout>
