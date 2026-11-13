@@ -1,0 +1,118 @@
+#!/system/bin/sh
+# killblackarch - tear down the BlackArch ARM64 chroot. Fully standalone.
+# Deploy to the device (e.g. /data/local/nhsystem/killblackarch) and chmod +x it.
+
+[ -f /data/local/nhsystem/blackarch.conf ] && . /data/local/nhsystem/blackarch.conf
+
+export PATH="/system/bin:/system/xbin:/data/adb/magisk:/sbin:$PATH"
+BUSYBOX=$(which busybox_nh 2>/dev/null || which busybox)
+LOCAL_CHROOT="/data/local/nhsystem/blackarch-arm64"
+MNT="$LOCAL_CHROOT"
+if [ -n "$SD_UUID" ]; then
+    SD_CHROOT="/mnt/expand/${SD_UUID}/blackarch-arm64"
+fi
+LOG="/data/local/nhsystem/blackarch.log"
+
+mkdir -p "$(dirname "$LOG")" 2>/dev/null
+balog() { echo "$(date '+%H:%M:%S') $1" >> "$LOG"; echo "$1"; }
+
+if [ -z "$BUSYBOX" ] || [ ! -x "$BUSYBOX" ]; then
+    balog "ERROR: busybox not found or not executable"
+    exit 1
+fi
+if [ ! -d "$MNT" ]; then
+    balog "No BlackArch rootfs found at $MNT"
+    exit 1
+fi
+
+f_kill_pids() {
+    local pids
+    pids=$($BUSYBOX lsof 2>/dev/null | grep "$MNT" | awk '{print $2}' | uniq)
+    for pid in $pids; do
+        [ "$pid" = "$$" ] && continue
+        kill -9 "$pid" 2>/dev/null
+    done
+}
+
+f_restore_setup() {
+    rm -rf "$MNT"/tmp/.X11* "$MNT"/tmp/.X*-lock 2>/dev/null
+    rm -f "$MNT"/root/.vnc/*.pid "$MNT"/root/.vnc/*.log 2>/dev/null
+}
+
+# Unmount $MNT/$1 and remove the dir (except dev/pts, dev/shm).
+f_umount_fs() {
+    local p="$MNT/$1"
+    if grep -q " $p " /proc/mounts 2>/dev/null; then
+        $BUSYBOX umount -l "$p" 2>/dev/null || $BUSYBOX umount -f "$p" 2>/dev/null
+    fi
+    if ! grep -q " $p " /proc/mounts 2>/dev/null; then
+        case "$1" in
+            dev/pts|dev/shm) ;;
+            *) rm -rf "$p" 2>/dev/null ;;
+        esac
+    fi
+}
+
+# Same, but never remove the directory (bind-mounted rootfs stays intact).
+f_umount_fs_keep() {
+    local p="$MNT/$1"
+    if grep -q " $p " /proc/mounts 2>/dev/null; then
+        $BUSYBOX umount -l "$p" 2>/dev/null || $BUSYBOX umount -f "$p" 2>/dev/null
+    fi
+}
+
+MOUNT_LIST="dev/binderfs dev/pts dev/shm dev proc sys system sdcard"
+
+f_dir_umount() {
+    sync
+    f_kill_pids
+    f_restore_setup
+    for m in $MOUNT_LIST; do
+        f_umount_fs "$m"
+    done
+}
+
+f_bindmount_umount() {
+    sync
+    f_kill_pids
+    f_restore_setup
+    for m in $MOUNT_LIST; do
+        f_umount_fs_keep "$m"
+    done
+    if [ -n "$SD_UUID" ]; then
+        # Clean propagated copies of the mounts that appeared under the SD source path.
+        for m in $MOUNT_LIST; do
+            p="$SD_CHROOT/$m"
+            if grep -q " $p " /proc/mounts 2>/dev/null; then
+                $BUSYBOX umount -l "$p" 2>/dev/null || $BUSYBOX umount -f "$p" 2>/dev/null
+            fi
+        done
+    fi
+}
+
+f_is_mntpoint() {
+    $BUSYBOX mountpoint -q "$MNT" 2>/dev/null
+}
+
+# ---- MAIN ----
+balog "Stopping BlackArch chroot"
+if f_is_mntpoint; then
+    f_bindmount_umount
+else
+    f_dir_umount
+fi
+
+isAllunmounted=0
+for m in $MOUNT_LIST; do
+    if grep -q " $MNT/$m " /proc/mounts 2>/dev/null; then
+        balog "WARN: $MNT/$m still mounted"
+        isAllunmounted=1
+    fi
+done
+
+if [ "$isAllunmounted" -eq 0 ]; then
+    balog "BlackArch chroot unmounted"
+else
+    balog "BlackArch chroot unmount incomplete"
+fi
+exit $isAllunmounted

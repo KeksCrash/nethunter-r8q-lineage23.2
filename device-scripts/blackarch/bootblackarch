@@ -1,0 +1,165 @@
+#!/system/bin/sh
+# bootblackarch - mount a BlackArch ARM64 chroot. Fully standalone (no NetHunter helpers).
+# Deploy to the device (e.g. /data/local/nhsystem/bootblackarch) and chmod +x it.
+
+[ -f /data/local/nhsystem/blackarch.conf ] && . /data/local/nhsystem/blackarch.conf
+
+export PATH="/system/bin:/system/xbin:/data/adb/magisk:/sbin:$PATH"
+BUSYBOX=$(which busybox_nh 2>/dev/null || which busybox)
+LOCAL_CHROOT="/data/local/nhsystem/blackarch-arm64"
+MNT="$LOCAL_CHROOT"
+CHROOT_EXEC="/usr/bin/env"
+if [ -n "$SD_UUID" ]; then
+    SD_CHROOT="/mnt/expand/${SD_UUID}/blackarch-arm64"
+fi
+LOG="/data/local/nhsystem/blackarch.log"
+
+mkdir -p "$(dirname "$LOG")" 2>/dev/null
+balog() { echo "$(date '+%H:%M:%S') $1" >> "$LOG"; echo "$1"; }
+
+if [ -z "$BUSYBOX" ] || [ ! -x "$BUSYBOX" ]; then
+    balog "ERROR: busybox not found or not executable"
+    exit 1
+fi
+
+# With SD storage the bind mount may not be restored yet (guard times out before
+# lockscreen unlock decrypts the adopted-storage volume). Restore it now.
+if [ -n "$SD_UUID" ] && ! $BUSYBOX mountpoint -q "$MNT" 2>/dev/null; then
+    if [ -d "$SD_CHROOT/bin" ]; then
+        # Remove guard stub if it created an empty local dir
+        if [ -d "$MNT/bin" ] && [ ! -x "$MNT/usr/bin/env" ]; then
+            rm -rf "$MNT"
+        fi
+        mkdir -p "$MNT"
+        balog "Restoring SD bind-mount $SD_CHROOT -> $MNT"
+        $BUSYBOX mount -o bind "$SD_CHROOT" "$MNT"
+    fi
+fi
+
+if [ ! -d "$MNT" ] || [ ! -x "$MNT/usr/bin/env" ]; then
+    balog "No BlackArch rootfs found. Extract it to $MNT"
+    exit 1
+fi
+
+f_chk_chroot() {
+    if [ ! -x "$MNT$CHROOT_EXEC" ] && [ ! -e "$MNT$CHROOT_EXEC" ]; then
+        balog "ERROR: $MNT$CHROOT_EXEC not found - rootfs missing or incomplete"
+        return 1
+    fi
+    if ! $BUSYBOX chroot "$MNT" /usr/bin/uname >/dev/null 2>&1; then
+        balog "ERROR: chroot test failed (busybox chroot $MNT /usr/bin/uname)"
+        return 1
+    fi
+    return 0
+}
+
+f_isAllReady() {
+    for d in proc sys dev dev/pts system sdcard; do
+        if ! grep -q " $MNT/$d " /proc/mounts 2>/dev/null; then
+            return 1
+        fi
+    done
+    [ -e "$MNT/dev/net/tun" ] || return 1
+    for l in fd stdin stdout stderr; do
+        [ -e "$MNT/dev/$l" ] || return 1
+    done
+    return 0
+}
+
+f_mount_sdcard() {
+    local sd=""
+    for p in "$EXTERNAL_STORAGE" /storage/emulated/0 /storage/emulated/legacy /storage/sdcard0 /sdcard; do
+        if [ -n "$p" ] && [ -d "$p" ]; then
+            sd="$p"
+            break
+        fi
+    done
+    if [ -z "$sd" ]; then
+        balog "WARN: no sdcard path found, skipping sdcard mount"
+        return 0
+    fi
+    mkdir -p "$MNT/sdcard"
+    if ! grep -q " $MNT/sdcard " /proc/mounts 2>/dev/null; then
+        $BUSYBOX mount -o bind "$sd" "$MNT/sdcard" && balog "Mounted sdcard ($sd)"
+    fi
+}
+
+f_mount_fs() {
+    balog "Mounting BlackArch filesystems under $MNT"
+
+    $BUSYBOX mount -o remount,suid /data 2>/dev/null
+    chmod +s "$MNT$CHROOT_EXEC" 2>/dev/null
+
+    [ -e /dev/fd ]     || ln -s /proc/self/fd   /dev/fd     2>/dev/null
+    [ -e /dev/stdin ]  || ln -s /proc/self/fd/0 /dev/stdin  2>/dev/null
+    [ -e /dev/stdout ] || ln -s /proc/self/fd/1 /dev/stdout 2>/dev/null
+    [ -e /dev/stderr ] || ln -s /proc/self/fd/2 /dev/stderr 2>/dev/null
+
+    if [ ! -e /dev/net/tun ]; then
+        mkdir -p /dev/net
+        mknod /dev/net/tun c 10 200 2>/dev/null
+        chmod 666 /dev/net/tun 2>/dev/null
+    fi
+
+    mkdir -p "$MNT/dev" "$MNT/proc" "$MNT/sys" "$MNT/system"
+
+    if ! grep -q " $MNT/dev " /proc/mounts; then
+        $BUSYBOX mount -o bind /dev "$MNT/dev"
+    fi
+    mkdir -p "$MNT/dev/pts" "$MNT/dev/shm"
+    if ! grep -q " $MNT/dev/pts " /proc/mounts; then
+        $BUSYBOX mount -t devpts devpts "$MNT/dev/pts"
+    fi
+    if ! grep -q " $MNT/dev/shm " /proc/mounts; then
+        $BUSYBOX mount -o rw,nosuid,nodev,mode=1777 -t tmpfs tmpfs "$MNT/dev/shm"
+    fi
+    if ! grep -q " $MNT/proc " /proc/mounts; then
+        $BUSYBOX mount -t proc proc "$MNT/proc"
+    fi
+    if ! grep -q " $MNT/sys " /proc/mounts; then
+        $BUSYBOX mount -o bind /sys "$MNT/sys"
+    fi
+    if ! grep -q " $MNT/system " /proc/mounts; then
+        $BUSYBOX mount -o bind /system "$MNT/system"
+    fi
+    if [ -d /dev/binderfs ]; then
+        mkdir -p "$MNT/dev/binderfs"
+        if ! grep -q " $MNT/dev/binderfs " /proc/mounts; then
+            $BUSYBOX mount -r -o bind /dev/binderfs "$MNT/dev/binderfs"
+        fi
+    fi
+
+    f_mount_sdcard
+
+    # DNS — Arch ships a symlink to systemd-resolved; replace it with a real file
+    rm -f "$MNT/etc/resolv.conf"
+    : > "$MNT/etc/resolv.conf"
+    for n in net.dns1 net.dns2 net.dns3 net.dns4; do
+        ns=$(getprop "$n")
+        [ -n "$ns" ] && echo "nameserver $ns" >> "$MNT/etc/resolv.conf"
+    done
+    echo "nameserver 208.67.222.222" >> "$MNT/etc/resolv.conf"
+    echo "nameserver 208.67.220.220" >> "$MNT/etc/resolv.conf"
+
+    # Hostname
+    echo "127.0.0.1		localhost blackarch" > "$MNT/etc/hosts"
+    echo "::1			localhost ip6-localhost ip6-loopback" >> "$MNT/etc/hosts"
+    echo "blackarch" > "$MNT/etc/hostname" 2>/dev/null
+    echo "blackarch" > /proc/sys/kernel/hostname 2>/dev/null
+
+    sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1
+
+    balog "BlackArch filesystems mounted"
+}
+
+# ---- MAIN ----
+if ! f_chk_chroot; then
+    exit 1
+fi
+
+if f_isAllReady; then
+    balog "BlackArch chroot already mounted"
+else
+    f_mount_fs
+fi
+exit 0

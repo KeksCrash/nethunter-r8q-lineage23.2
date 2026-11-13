@@ -8,11 +8,14 @@ import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
 import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.View;
 import android.view.WindowManager;
 import android.widget.*;
 
 public final class FloatingBoard extends Service {
     private WindowManager windows;
+    private WindowManager.LayoutParams layoutParams;
     private LinearLayout panel;
     private LinearLayout controls;
     private ScrollView expanded;
@@ -64,12 +67,42 @@ public final class FloatingBoard extends Service {
         });
         panel.addView(toggle);
         panel.addView(expanded);
-        var layout = new WindowManager.LayoutParams(-2, -2,
+        var metrics = getResources().getDisplayMetrics();
+        layoutParams = new WindowManager.LayoutParams(-2, -2,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT);
-        layout.gravity = Gravity.END | Gravity.CENTER_VERTICAL;
-        layout.x = 12;
-        windows.addView(panel, layout);
+        layoutParams.gravity = Gravity.TOP | Gravity.START;
+        layoutParams.x = metrics.widthPixels - BoardTheme.dp(this, 120);
+        layoutParams.y = metrics.heightPixels / 2;
+        windows.addView(panel, layoutParams);
+        toggle.setOnTouchListener(new View.OnTouchListener() {
+            private int startX, startY;
+            private float touchX, touchY;
+            private boolean dragging;
+            @Override public boolean onTouch(View v, MotionEvent e) {
+                switch (e.getAction()) {
+                    case MotionEvent.ACTION_DOWN:
+                        startX = layoutParams.x; startY = layoutParams.y;
+                        touchX = e.getRawX(); touchY = e.getRawY();
+                        dragging = false;
+                        return false;
+                    case MotionEvent.ACTION_MOVE:
+                        int dx = (int)(e.getRawX() - touchX);
+                        int dy = (int)(e.getRawY() - touchY);
+                        if (!dragging && Math.abs(dx) + Math.abs(dy) > 15) dragging = true;
+                        if (dragging) {
+                            layoutParams.x = startX + dx;
+                            layoutParams.y = startY + dy;
+                            windows.updateViewLayout(panel, layoutParams);
+                        }
+                        return dragging;
+                    case MotionEvent.ACTION_UP:
+                        if (dragging) { v.performClick(); return true; }
+                        return false;
+                }
+                return false;
+            }
+        });
         refreshStatus();
     }
 
@@ -80,18 +113,23 @@ public final class FloatingBoard extends Service {
         micButton = BoardTheme.button(this, micButtonLabel(), BoardTheme.SURFACE, BoardTheme.TEAL,
             () -> request(snapshot.micEnabled() ? "mic-off" : "mic-on", null));
         BoardTheme.row(controls, micButton, 6);
-        var clips = ClipStore.list(this);
-        for (ClipStore.Clip clip : clips) {
-            int color = clip.title().startsWith("Andreas ·") ? BoardTheme.AMBER : BoardTheme.TEXT;
-            BoardTheme.row(controls, BoardTheme.button(this, clip.title(), BoardTheme.SURFACE, color,
-                                                     () -> request("clip", clip)), 6);
+        int rows = 0;
+        for (var group : ClipStore.groups(this).entrySet()) {
+            if (group.getValue().isEmpty()) continue;
+            BoardTheme.row(controls, BoardTheme.label(this, group.getKey(), 12, BoardTheme.VIOLET, true), 8);
+            rows++;
+            for (ClipStore.Clip clip : group.getValue()) {
+                BoardTheme.row(controls, BoardTheme.button(this, clip.title(), BoardTheme.SURFACE, BoardTheme.TEXT,
+                    () -> request("clip", clip)), 6);
+                rows++;
+            }
         }
         BoardTheme.row(controls, BoardTheme.button(this, "Einspeisung aus", 0xff4a2939,
                                                    BoardTheme.RED, () -> request("stop", null)), 6);
         BoardTheme.row(controls, BoardTheme.button(this, "Ausblenden", BoardTheme.SURFACE,
                                                    BoardTheme.TEXT, this::stopSelf), 6);
         int height = Math.min(getResources().getDisplayMetrics().heightPixels / 2,
-                              BoardTheme.dp(this, (clips.size() + 4) * 54));
+                              BoardTheme.dp(this, (rows + 4) * 54));
         expanded.setLayoutParams(new LinearLayout.LayoutParams(BoardTheme.dp(this, 230), height));
         refreshStatus();
     }

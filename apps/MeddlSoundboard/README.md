@@ -33,3 +33,9 @@ Die systemweite Mikrofonroute oder die Beschränkung auf TikTok und die
 Optionen für Handy-Mikrofon und eigene Wiedergabe werden in der App gewählt.
 Eigene Clips können per Android-Dateiauswahl oder unterstütztem Instant-Button-Link
 importiert werden. `pc-audio.zsh` ist der optionale PC-Eingang für PipeWire.
+
+Version 1.6 gruppiert Sounds in bearbeitbaren Kategorien. Langes Drücken
+öffnet das Menü zum Verschieben oder Entfernen, auch für mitgelieferte
+Sounds. Die App akzeptiert MP3 und erkennt identische PCM-Daten beim Import.
+Optionale Zusatzclips werden aus dem lokalen `assets/` geladen, wenn sie
+vorhanden sind. Details zu den lokalen Audioclips stehen im Arbeitsprojekt.

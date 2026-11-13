@@ -113,13 +113,15 @@ public final class BoardActivity extends Activity {
             request("start", null);
         });
         add(utilities, "Schwebende Tasten ausblenden", () -> stopService(new Intent(this, FloatingBoard.class)));
-        add(utilities, "Eigene Audiodatei hinzufügen", () -> {
+        add(utilities, "MP3 oder Audiodatei hinzufügen", () -> {
             var picker = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE);
             picker.setType("audio/*");
             startActivityForResult(picker, PICK_AUDIO);
         });
         add(utilities, "Instant-Buttons im Browser suchen", this::browseSites);
         add(utilities, "Instant-Button per Link hinzufügen", this::askLink);
+        add(utilities, "Kategorien verwalten", this::manageCategories);
+        add(utilities, "Identische Sounds entfernen", this::removeDuplicates);
         status = BoardTheme.label(this, "Bereit für einen Sound.", 14, BoardTheme.MUTED, false);
         BoardTheme.row(utilities, status, 8);
         BoardTheme.row(panel, utilities, 12);
@@ -235,12 +237,16 @@ public final class BoardActivity extends Activity {
 
     private void importClip(Callable<String> task) {
         status.setText("Sound wird importiert …");
+        runLibraryTask(() -> "Hinzugefügt: " + task.call());
+    }
+
+    private void runLibraryTask(Callable<String> task) {
         IMPORTS.execute(() -> {
             String result;
             try {
-                result = "Hinzugefügt: " + task.call();
+                result = task.call();
             } catch (Exception error) {
-                result = "Import fehlgeschlagen: " + error.getMessage();
+                result = "Soundboard: " + error.getMessage();
             }
             String message = result;
             runOnUiThread(() -> {
@@ -252,31 +258,89 @@ public final class BoardActivity extends Activity {
         });
     }
 
+    private void manageCategories() {
+        var categories = ClipStore.categories(this);
+        categories.remove(ClipStore.UNSORTED);
+        categories.add(0, "+ Neue Kategorie");
+        new AlertDialog.Builder(this).setTitle("Kategorien")
+            .setItems(categories.toArray(String[]::new), (dialog, index) ->
+                categoryDialog(index == 0 ? null : categories.get(index)))
+            .setNegativeButton("Schließen", null).show();
+    }
+
+    private void categoryDialog(String previous) {
+        var name = new EditText(this);
+        name.setSingleLine(true);
+        if (previous != null) name.setText(previous);
+        var builder = new AlertDialog.Builder(this).setTitle(previous == null ? "Neue Kategorie" : "Kategorie bearbeiten")
+            .setView(name).setNegativeButton("Abbrechen", null).setPositiveButton("Speichern", null);
+        if (previous != null) {
+            builder.setNeutralButton("Löschen", (dialog, which) -> new AlertDialog.Builder(this)
+                .setTitle("Kategorie löschen?").setMessage("Die Sounds werden nach Unsortiert verschoben.")
+                .setNegativeButton("Abbrechen", null).setPositiveButton("Löschen", (confirm, button) -> {
+                    ClipStore.editCategory(this, previous, null);
+                    refreshClips();
+                }).show());
+        }
+        var dialog = builder.show();
+        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
+            try {
+                ClipStore.editCategory(this, previous, name.getText().toString());
+                refreshClips();
+                dialog.dismiss();
+            } catch (IllegalArgumentException error) {
+                name.setError(error.getMessage());
+            }
+        });
+    }
+
+    private void removeDuplicates() {
+        new AlertDialog.Builder(this).setTitle("Identische Sounds entfernen?")
+            .setMessage("Pro identischem Audiosignal bleibt ein Sound erhalten.")
+            .setNegativeButton("Abbrechen", null).setPositiveButton("Bereinigen", (dialog, button) ->
+                runLibraryTask(() -> "Entfernte Duplikate: " + ClipStore.removeDuplicates(getApplicationContext())))
+            .show();
+    }
+
     private void refreshClips() {
         clips.removeAllViews();
-        String group = "";
-        for (ClipStore.Clip clip : ClipStore.list(this)) {
-            String section = !clip.builtin() ? "IMPORTE"
-                : clip.title().startsWith("Andreas ·") ? "ANDREAS" : "DRACHENLORD";
-            int color = section.equals("ANDREAS") ? BoardTheme.AMBER
-                : section.equals("IMPORTE") ? BoardTheme.VIOLET : BoardTheme.TEAL;
-            if (!group.equals(section)) {
-                BoardTheme.row(clips, BoardTheme.label(this, section, 13, color, true), 14);
-                group = section;
+        for (var group : ClipStore.groups(this).entrySet()) {
+            if (group.getValue().isEmpty()) continue;
+            String name = group.getKey();
+            int color = name.equals("Andreas") ? BoardTheme.AMBER
+                : name.equals("Importe") || name.endsWith("· KI") ? BoardTheme.VIOLET : BoardTheme.TEAL;
+            BoardTheme.row(clips, BoardTheme.label(this, name, 13, color, true), 14);
+            for (ClipStore.Clip clip : group.getValue()) {
+                Button button = BoardTheme.button(this, clip.title(), BoardTheme.SURFACE, color,
+                    () -> request("clip", clip));
+                BoardTheme.row(clips, button, 7);
+                button.setOnLongClickListener(view -> {
+                    clipMenu(clip);
+                    return true;
+                });
             }
-            Button button = BoardTheme.button(this, clip.title(), BoardTheme.SURFACE, color,
-                                             () -> request("clip", clip));
-            BoardTheme.row(clips, button, 7);
-            if (!clip.builtin()) button.setOnLongClickListener(view -> {
+        }
+    }
+
+    private void clipMenu(ClipStore.Clip clip) {
+        new AlertDialog.Builder(this).setTitle(clip.title())
+            .setItems(new String[] {"In Kategorie verschieben", "Sound entfernen"}, (dialog, index) -> {
+                if (index == 0) {
+                    var categories = ClipStore.categories(this);
+                    new AlertDialog.Builder(this).setTitle("Zielkategorie")
+                        .setItems(categories.toArray(String[]::new), (chooser, choice) -> {
+                            ClipStore.move(this, clip, categories.get(choice));
+                            refreshClips();
+                        }).show();
+                    return;
+                }
                 new AlertDialog.Builder(this).setTitle("Sound entfernen?")
                     .setMessage(clip.title()).setNegativeButton("Abbrechen", null)
-                    .setPositiveButton("Entfernen", (dialog, which) -> {
+                    .setPositiveButton("Entfernen", (confirm, button) -> {
                         ClipStore.remove(this, clip);
                         refreshClips();
                     }).show();
-                return true;
-            });
-        }
+            }).setNegativeButton("Schließen", null).show();
     }
 
     private Button add(LinearLayout parent, String label, Runnable action) {

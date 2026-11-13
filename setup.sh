@@ -208,6 +208,9 @@ if [ -n "$ANDROID_BT" ]; then
     echo "=== Building Kali Lock ==="
     bash "$DIR/apps/KaliLock/build.sh" install
     KALILOCK_APK="$DIR/apps/KaliLock/build/install/KaliLock.apk"
+    echo "=== Building BlackArch Manager ==="
+    (cd "$DIR/apps/BlackArchManager" && bash build.sh)
+    BLACKARCH_APK="$DIR/apps/BlackArchManager/build/BlackArchManager.apk"
 fi
 
 # Apps-only entry point is apps/KaliLock/build.sh; full setup keeps both apps together.
@@ -224,6 +227,10 @@ if [ -n "$KALILOCK_APK" ] && [ -f "$KALILOCK_APK" ]; then
 fi
 if [ -n "$APK_PATH" ] && [ -f "$APK_PATH" ]; then
     echo "IMSI App:    $APK_PATH"
+fi
+if [ -n "$BLACKARCH_APK" ] && [ -f "$BLACKARCH_APK" ]; then
+    echo "BlackArch:   $BLACKARCH_APK"
+    echo "Install:     adb install -r \"$BLACKARCH_APK\""
 fi
 echo ""
 echo "=== Deploy to device ==="
@@ -245,6 +252,14 @@ echo "  # Push device scripts (included in kernel ZIP, but can be updated separa
 echo "  adb push $DIR/device-scripts/usbfs.sh /data/adb/service.d/"
 echo "  adb push $DIR/device-scripts/usb-hotplug.sh /data/adb/service.d/"
 echo "  adb push $DIR/device-scripts/setup-ap.sh /data/adb/service.d/"
+echo ""
+echo "  # Push BlackArch chroot scripts:"
+echo "  adb push $DIR/device-scripts/blackarch/blackarch.conf /data/local/nhsystem/"
+echo "  adb push $DIR/device-scripts/blackarch/bootblackarch /data/adb/service.d/"
+echo "  adb push $DIR/device-scripts/blackarch/killblackarch /data/adb/service.d/"
+echo "  adb push $DIR/device-scripts/blackarch/blackarch-chroot-guard.sh /data/adb/service.d/"
+echo "  adb shell chmod +x /data/adb/service.d/bootblackarch /data/adb/service.d/killblackarch /data/adb/service.d/blackarch-chroot-guard.sh"
+echo ""
 echo "  adb shell mkdir -p /data/local/bin"
 echo "  adb push $DIR/device-scripts/imsi-catcher-detect.sh /data/local/bin/"
 echo ""

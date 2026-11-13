@@ -10,6 +10,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.security.MessageDigest;
 import java.util.*;
 import java.util.regex.Pattern;
 
@@ -17,6 +18,9 @@ final class ClipStore {
     static final int RATE = 48000;
     private static final int SECONDS = 30;
     private static final int MAX_INPUT = 32 * 1024 * 1024;
+    static final String UNSORTED = "Unsortiert";
+    private static final Set<String> INITIAL_GROUPS = Set.of(
+        "Drachenlord · Klassiker", "Drachenlord · Sprüche", "Drachenlord · KI", "Andreas", "Importe");
     private static final Set<String> HOSTS = Set.of(
         "myinstants.com", "www.myinstants.com", "instantsbutton.com",
         "www.instantsbutton.com", "storage.instantsbutton.com");
@@ -38,6 +42,23 @@ final class ClipStore {
             new Clip("Andreas · Halt Stopp!", "halt-stopp.pcm", true),
             new Clip("Andreas · Halt Stopp! (Variante)", "halt-stopp-variante.pcm", true),
             new Clip("Andreas · Alles bleibt so, wie es ist", "alles-bleibt.pcm", true)));
+        try {
+            var assets = new HashSet<>(Arrays.asList(context.getAssets().list("")));
+            for (Clip clip : List.of(
+                    new Clip("100 Sachen 80", "100-sachen-80.pcm", true),
+                    new Clip("Was zitterstn so?", "was-zitterstn-so.pcm", true),
+                    new Clip("Das glaub ich dir gerne", "das-glaub-ich-dir-gerne.pcm", true),
+                    new Clip("Hagebuddne!", "hagebuddne_fmRCw67.pcm", true),
+                    new Clip("Ja oder nein", "ja-oder-nein.pcm", true),
+                    new Clip("So Leude, Forza", "so-leude-forza.pcm", true),
+                    new Clip("Der wollte seine 7 abgeben", "ki-ronaldo.pcm", true),
+                    new Clip("Auf der anderen Seite stand noch eins", "ki-ronaldo-anderes-tor.pcm", true),
+                    new Clip("Ich spiel gar kein Fußball", "ki-ronaldo-kein-fussball.pcm", true))) {
+                if (assets.contains(clip.id())) clips.add(clip);
+            }
+        } catch (IOException ignored) {
+            // The mandatory clips are already listed.
+        }
         var custom = new ArrayList<Clip>();
         for (var entry : context.getSharedPreferences("clips", 0).getAll().entrySet()) {
             if (new File(context.getFilesDir(), entry.getKey()).isFile()) {
@@ -46,13 +67,90 @@ final class ClipStore {
         }
         custom.sort(Comparator.comparing(Clip::title, String.CASE_INSENSITIVE_ORDER));
         clips.addAll(custom);
+        var library = context.getSharedPreferences("library", 0);
+        clips.removeIf(clip -> library.getBoolean("hidden:" + clip.id(), false));
         return clips;
     }
 
-    static void remove(Context context, Clip clip) {
-        if (clip.builtin()) return;
+    static List<String> categories(Context context) {
+        var stored = context.getSharedPreferences("library", 0).getStringSet("categories", INITIAL_GROUPS);
+        var categories = new ArrayList<>(stored);
+        categories.sort(String.CASE_INSENSITIVE_ORDER);
+        categories.add(0, UNSORTED);
+        return categories;
+    }
+
+    private static String category(Context context, Clip clip, List<String> categories) {
+        String initial = !clip.builtin() ? "Importe"
+            : clip.title().startsWith("Andreas ·") ? "Andreas"
+            : clip.id().startsWith("ki-") ? "Drachenlord · KI"
+            : Set.of("metall-leute.pcm", "100-sachen-80.pcm", "so-leude-forza.pcm").contains(clip.id())
+                ? "Drachenlord · Klassiker" : "Drachenlord · Sprüche";
+        String selected = context.getSharedPreferences("library", 0).getString("category:" + clip.id(), initial);
+        return categories.contains(selected) ? selected : UNSORTED;
+    }
+
+    static Map<String, List<Clip>> groups(Context context) {
+        List<String> categories = categories(context);
+        var groups = new LinkedHashMap<String, List<Clip>>();
+        for (String name : categories) groups.put(name, new ArrayList<>());
+        for (Clip clip : list(context)) groups.get(category(context, clip, categories)).add(clip);
+        return groups;
+    }
+
+    static void move(Context context, Clip clip, String category) {
+        if (!categories(context).contains(category)) throw new IllegalArgumentException("Kategorie fehlt");
+        context.getSharedPreferences("library", 0).edit().putString("category:" + clip.id(), category).apply();
+    }
+
+    static void editCategory(Context context, String previous, String next) {
+        List<String> categories = categories(context);
+        if (UNSORTED.equals(previous)) throw new IllegalArgumentException("Unsortiert bleibt erhalten");
+        if (next != null) {
+            next = next.strip();
+            if (next.isEmpty() || next.length() > 48) throw new IllegalArgumentException("1 bis 48 Zeichen eingeben");
+            if (next.equals(previous)) return;
+            for (String existing : categories) {
+                if (!existing.equals(previous) && existing.equalsIgnoreCase(next)) {
+                    throw new IllegalArgumentException("Diese Kategorie gibt es bereits");
+                }
+            }
+        }
+        var edit = context.getSharedPreferences("library", 0).edit();
+        if (previous != null) {
+            for (Clip clip : groups(context).getOrDefault(previous, List.of())) {
+                edit.putString("category:" + clip.id(), next == null ? UNSORTED : next);
+            }
+            categories.remove(previous);
+        }
+        categories.remove(UNSORTED);
+        if (next != null) categories.add(next);
+        edit.putStringSet("categories", new HashSet<>(categories)).apply();
+    }
+
+    static synchronized void remove(Context context, Clip clip) {
+        var edit = context.getSharedPreferences("library", 0).edit().remove("category:" + clip.id());
+        if (clip.builtin()) {
+            edit.putBoolean("hidden:" + clip.id(), true).apply();
+            return;
+        }
+        edit.apply();
         context.getSharedPreferences("clips", 0).edit().remove(clip.id()).apply();
         new File(context.getFilesDir(), clip.id()).delete();
+    }
+
+    private static String fingerprint(byte[] pcm) throws Exception {
+        return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(pcm));
+    }
+
+    static synchronized int removeDuplicates(Context context) throws Exception {
+        var seen = new HashSet<String>();
+        var duplicates = new ArrayList<Clip>();
+        for (Clip clip : list(context)) {
+            if (!seen.add(fingerprint(clip.read(context)))) duplicates.add(clip);
+        }
+        for (Clip clip : duplicates) remove(context, clip);
+        return duplicates.size();
     }
 
     static String fromFile(Context context, Uri uri) throws Exception {
@@ -143,17 +241,27 @@ final class ClipStore {
             String label = title.replaceFirst("\\.[^.]{1,5}$", "").strip();
             if (label.isEmpty()) label = "Eigener Sound";
             if (label.length() > 70) label = label.substring(0, 70);
-            String id = "clip-" + UUID.randomUUID() + ".pcm";
-            File target = new File(context.getFilesDir(), id);
-            Files.write(target.toPath(), pcm);
-            if (!context.getSharedPreferences("clips", 0).edit().putString(id, label).commit()) {
-                target.delete();
-                throw new IOException("Sound konnte nicht gespeichert werden");
-            }
-            return label;
+            return save(context, label, pcm);
         } finally {
             source.delete();
         }
+    }
+
+    private static synchronized String save(Context context, String label, byte[] pcm) throws Exception {
+        String digest = fingerprint(pcm);
+        for (Clip clip : list(context)) {
+            if (digest.equals(fingerprint(clip.read(context)))) {
+                throw new IOException("Bereits vorhanden: " + clip.title());
+            }
+        }
+        String id = "clip-" + UUID.randomUUID() + ".pcm";
+        File target = new File(context.getFilesDir(), id);
+        Files.write(target.toPath(), pcm);
+        if (!context.getSharedPreferences("clips", 0).edit().putString(id, label).commit()) {
+            target.delete();
+            throw new IOException("Sound konnte nicht gespeichert werden");
+        }
+        return label;
     }
 
     private static byte[] decode(File source) throws Exception {
